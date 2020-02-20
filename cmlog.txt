@@ -1,0 +1,5 @@
+DATE: 08/23/19 - 08/23/19 cmlog.txt
+
+This localhost (server) information:
+	Name:    ieng6-240.ucsd.edu
+	Address: 128.54.70.240

@@ -1,0 +1,15 @@
+Evaluating file schemetest.cmd
+---> (define dopingmodel uniform)
+dopingmodel
+---> (define dopingmodel erf)
+dopingmodel
+---> (cond ((string=? dopingmodel uniform) (begin (newline) (display ***********************************************************) (newline) (display Using an uniform doping profile) (newline) (display ***********************************************************) (newline))) ((string=? dopingmodel erf) (begin (display Using an error function doping profile))))
+
+---> #[end-of-file]
+"************************************************************************"
+"Sentaurus Structure Editor "
+"Start Time:    Fri Jan 31 19:36:04 2020"
+"End   Time:    Fri Jan 31 19:36:04 2020"
+"Total Execution Time (sec):    0"
+"Total System calls Time (sec): 0"
+"************************************************************************"

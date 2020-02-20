@@ -1,0 +1,38 @@
+###########################################
+# Sentaurus Visual K-2015.06-SP1.
+# Tcl log file.
+#------------------------------------------
+# Date: Feb 19, 2020. 19:24:48.
+# Version: 24.0.10 (1.10)
+# Mode: Interactive (GUI).
+# Hostname: ieng6-702.ucsd.edu.
+# Machine: Linux, x86_64, x86_64.
+# Kernel: 3.10.0-1062.9.1.el7.x86_64.
+###########################################
+
+load_file /home/linux/ieng6/na299x/na299x/DB/Guillaume/cell_AlBSF/Al_BSF/nodnum1_msh.tdr
+create_plot -dataset nodnum1_msh
+select_plots Plot_nodnum1_msh
+#-> Plot_nodnum1_msh
+#-> Plot_nodnum1_msh
+#-> nodnum1_msh
+zoom_plot -plot Plot_nodnum1_msh -window {51.0381 29.7717 5.64271 -11.3411}
+set_field_prop -plot Plot_nodnum1_msh -geom nodnum1_msh MetalConductivity -show_bands
+#-> 0
+zoom_plot -plot Plot_nodnum1_msh -window {23.3556 -2.22606 32.3757 21.4162}
+zoom_plot -plot Plot_nodnum1_msh -window {25.2721 -0.0966161 30.9506 9.84077}
+zoom_plot -plot Plot_nodnum1_msh -window {26.5852 0.385336 28.054 2.77215}
+zoom_plot -plot Plot_nodnum1_msh -window {27.3444 1.12949 27.7027 1.53189}
+load_file /home/linux/ieng6/na299x/na299x/DB/Guillaume/cell_AlBSF/Al_BSF/20200217_1e-8mseg_1umdefaultshunt/n_t0_msh.tdr
+create_plot -dataset n_t0_msh
+select_plots Plot_n_t0_msh
+#-> Plot_n_t0_msh
+#-> Plot_n_t0_msh
+#-> n_t0_msh
+set_plot_prop -plot Plot_nodnum1_msh -hide
+#-> 0
+zoom_plot -plot Plot_n_t0_msh -window {91.0487 34.2025 -1.83872 -6.89811}
+zoom_plot -plot Plot_n_t0_msh -window {50.89 -4.22332 8.93557 6.71422}
+zoom_plot -plot Plot_n_t0_msh -window {21.839 -1.96196 30.3921 3.19939}
+zoom_plot -plot Plot_n_t0_msh -window {26.8295 -0.456059 28.4079 0.926868}
+exit 0
