@@ -26,9 +26,9 @@
 (define shuntmat "Metal") ; Conductivity is added later as an external profile
 
 ; define contact length
-(define Wcontact 5)
+(define Wcontact ${contact_length})
 ; define cell length
-(define L 50)
+(define L ${device_length})
 ; wafer thickness
 (define WSi 300)
 ; uniform emitter thickness (if selected)
@@ -150,7 +150,7 @@
 ; (sdedr:define-refeval-window "shunt1_region" "Line" (position shunt1_pos_x1 0 0) (position shunt1_pos_x2 0 0) )
 (sdedr:define-refeval-window "shunt1_region" "Line" (position (* shunt1_pos_x1 1) 0 0) (position (* shunt1_pos_x2 1) 0 0) )
 ; Define conductivity placement
-(sdedr:define-analytical-profile-placement "shunt1_placement" "shunt_cond" "shunt1_region"  "Positive" "Replace" "Eval" "" 0.0 "evalwin")
+(sdedr:define-analytical-profile-placement "shunt1_placement" "shunt_cond" "shunt1_region"  "Positive" "Replace" "Eval" "shunt1_region" 0.0 "evalwin")
 ;(sdedr:define-analytical-profile-placement "shunt1_placement" "shunt_cond" "shunt1_region" "Positive" "Replace" "EvalWin" "shunt1_region" "DecayLength" -1) ; note: "replace" is used to replace all calculated values by the current profile.
 
 ;(sdegeo:create-rectangle (position (- L 0.1) 0 0) (position (+ (- L 0.1) shuntw) (* 0.9 Wem) 0) shuntmat "shunt-region")

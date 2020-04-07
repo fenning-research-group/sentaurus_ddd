@@ -33,7 +33,7 @@ Physics {
 	Recombination ( SRH )
 
 	* Define area of the contacts (in um)
-	AreaFactor=2e10
+	AreaFactor= ${area_factor}
 
 	* Use the optical generation file imported and added to the mesh in the Sentaurus structure Editor file
 	*Optics(
@@ -152,7 +152,7 @@ Math {
 	ExitOnFailure
 	* for IV, stop voltage ramp after Voc
 	BreakCriteria {
-		Current (Contact= "em_contact" minval= -1e-3)
+		Current (Contact= "base_contact" minval= -1e-3)
 	}
 
     * display simulation time in 'human' units
@@ -195,8 +195,8 @@ Solve {
 	quasistationary (
 	    InitialStep = 0.005
 	    MaxStep = 0.050
-	    MinStep=0.001
-	    Goal {name= "em_contact" voltage = 0.7}
-	    plot { range=(0, 1) intervals=2 }
+	    MinStep=0.0001
+	    Goal {name= "em_contact" voltage = 0.8}
+	    *plot { range=(0, 1) intervals=2 }
 	) {coupled {poisson electron hole} }
 }

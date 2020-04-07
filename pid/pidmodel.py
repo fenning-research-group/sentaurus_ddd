@@ -11,6 +11,7 @@ import pandas as pd
 
 na_profile_type = np.dtype([('x (um)', 'd'), ('c (1/cm3)', 'd')])
 jv_dtype = np.dtype([('voltage (V)', 'd'), ('current (mA/cm2)', 'd')])
+na_file = "two_layers_D1=4E-16cm2ps_D2=1E-14cm2ps_Cs1E+20cm3_T85_time96hr_h1.0e-10_m1.0e+00_pnp.h5"
 
 class PIDModel:
     """
@@ -30,21 +31,25 @@ class PIDModel:
     _sdevice_template_dark: str = 'sdevice_dark_des.cmd'
     _sdevice_template_light: str = 'sdevice_light_des.cmd'
     _simulation_time: np.ndarray = np.array([])
+    _simulation_indices: np.ndarray = np.array([])
     _spectrum: str = 'am15-g_reduced.txt'
     _parfile_template: str = 'sdevice.txt'
 
-    def __init__(self, folderpath: str = "/home/linux/ieng6/na299x/na299x/DB/Erick/Solar_cell_Al_BSF",
-                 h5file: str = "two_layers_D1=4E-16cm2ps_D2=1E-14cm2ps_Cs1E+20cm3_T85_time96hr_h1.0e-10_m1.0e+00_pnp.h5",
-                 segregation_coefficient: float = 10, use_srv: bool = False,
+    def __init__(self, folder_path: str = "/home/linux/ieng6/na299x/na299x/DB/Erick/PID/test",
+                 na_h5_file: str = na_file,
+                 segregation_coefficient: float = 10,
+                 use_srv: bool = False,
                  clathrate_file: str = "clathrates_cond.csv",
-                 illuminated: bool = True):
+                 illuminated: bool = True,
+                 contact_length: float = 5,
+                 device_length: float = 5):
         """
 
         Parameters
         ----------
-        folderpath: str
+        folder_path: str
             Name of the directory where the generated sde and sdevice files will be saved. Example: "./test_dir"
-        h5file: str
+        na_h5_file: str
             Name of the h5py file containing the sodium migration profiles at each time point. eg "FOR_newNaprofile.h5"
         segregation_coefficient: [int, float]
             Value of the segregation coefficient of sodium from Si bulk to the stacking fault. (Default 10)
@@ -55,30 +60,37 @@ class PIDModel:
         illuminated: bool
             True if the device is under illumination
             TODO: Consider that the device is always under illumination
+        contact_length: float
+            The length of the metal contact
+        device_length: float
+            The total length of the cell
         """
 
         self._clathrateFile: str = clathrate_file
         self._cwd: str = os.path.dirname(__file__)
-        self._folder_name: str = folderpath
-        self._folder_path: str = folderpath
-        self._NaProfileFileName: str = h5file
+        self._folder_name: str = folder_path
+        self._folder_path: str = folder_path
+        self._NaProfileFileName: str = na_h5_file
         self._segregation_coefficient: float = segregation_coefficient
         self._useSRV: bool = use_srv
         self._sdevice_template = self._sdevice_template_light if illuminated else self._sdevice_template_dark
         self._illuminated = illuminated
-        with h5py.File(h5file, 'r') as hf:
+        self._contact_length = contact_length
+        self._device_length = device_length
+        with h5py.File(na_h5_file, 'r') as hf:
             group_time = hf['time']
             self._temperature = float(group_time.attrs['temp_c'])
 
-    def run_pid(self, startstep: int = 0, endstep: int = 0, skip_nb: int = 0, overwrite_folder: bool = False):
+    def run_pid(self, start_step: int = 0, end_step: int = 0, skip_nb: int = 0, overwrite_folder: bool = False):
         """
+        Start the sdevice simulation for each C(t) in [startstep:skip_nb:endstep]
 
         Parameters
         ----------
-        startstep: int
+        start_step: int
             Number of the step where simulations will start. Should be 0 unless a different starting step is wanted
             (for instance if previous steps have already been run before).
-        endstep: int
+        end_step: int
             Number of the step where the simulations will end. If set to 0, simulations will run at all time points in
             the h5file containing the sodium migration profiles
         skip_nb: int
@@ -92,6 +104,22 @@ class PIDModel:
         -------
 
         """
+        skip_nb = abs(int(skip_nb))
+        start_step = abs(int(start_step))
+        end_step = abs(int(end_step))
+
+        if skip_nb == 0:
+            self.log('Trying to set skip_nb={0:d} in run_pid method. Reverting to skip_nb=1.'.format(skip_nb),
+                     level='WARNING')
+            skip_nb = 1
+        elif start_step > end_step:
+            self.log('Trying to set start_step={0:d} > end_step{1:d} in run_pid method. Reverting to skip_nb=1.'.format(
+                start_step, end_step),
+                level='WARNING')
+            start_step = 0
+            end_step = 0
+            skip_nb = 1
+
         self._folder_path: str = self.prepare_folder(self._folder_name, overwrite_folder)
         self._logger: logging.Logger = self.__create_logger(logger_id='pid_logger')
 
@@ -103,9 +131,9 @@ class PIDModel:
         self.log('Temperature: {0} °C'.format(self._temperature))
         self.log('Shunt segregation coeffiecient: {0:g}'.format(self._segregation_coefficient))
         self.log('Sodium profiles simulation file: {0}'.format(self._NaProfileFileName))
-        self.log('Simulation starting step: {0}'.format(startstep))
+        self.log('Simulation starting step: {0}'.format(start_step))
         self.log('Step used to skip sodium profiles in the h5py file: {0}'.format(skip_nb))
-        self.log('Simulation ending step: {0}'.format(endstep))
+        self.log('Simulation ending step: {0}'.format(end_step))
         self.log('Sentaurus editor template file: {0}'.format(self._sde_template))
         self.log('Sentaurus device template file: {0}'.format(self._sdevice_template))
 
@@ -117,9 +145,10 @@ class PIDModel:
             depth = np.array(hf.get('L2/x'))
 
         x = (depth - depth[0]) * factor  # Difference because x does not start at 0
-        self._simulation_time = np.array([time[i] for i in range(startstep, endstep+skip_nb, skip_nb)])
+        self._simulation_time = np.array([time[i] for i in range(start_step, end_step + skip_nb, skip_nb)])
+        self._simulation_indices = np.array([i for i in range(start_step, end_step + skip_nb, skip_nb)])
 
-        for i in range(startstep, endstep+skip_nb, skip_nb):
+        for i in range(start_step, end_step + skip_nb, skip_nb):
             # Get the Na concentration at time t = ti
             ct_ds = 'ct_{0:d}'.format(i)
             with h5py.File(self._NaProfileFileName, 'r') as hf:
@@ -140,12 +169,14 @@ class PIDModel:
             self.srv_param(cNa=ct, time=time[i], use_srv=True)
             [sde_filename, sdevice_filename] = self.update_files(concentration=ct, x=x, time=time[i])
             # Run sde
-            success:bool = self.run_sde(input_file=sde_filename)
+            success: bool = self.run_sde(input_file=sde_filename)
             if not success:
                 raise RuntimeError('Error running sde. Stopping program execution.')
             # Run sdevice
-            success = self.run_sdevice(input_file=sdevice_filename)
+            self.run_sdevice(input_file=sdevice_filename)
 
+        self.log('Converting JV plots to tdr files...')
+        self.plt2tdr()
         final_string = "Results in {0}".format(self._folder_path)
         self.log(final_string)
 
@@ -268,7 +299,9 @@ class PIDModel:
             'dshunt_name': self._dshuntname,
             'shunt_depth': shunt_depth,
             'shunt_conductivity_file': conductivity_fullname,
-            'nodnum1': mesh_node_file
+            'nodnum1': mesh_node_file,
+            'contact_length': self._contact_length,
+            'device_length': self._device_length
         }
         # Load the template file
         template_file_sde = open(os.path.join(self._cwd, self._sde_template), 'r')
@@ -297,7 +330,8 @@ class PIDModel:
             'nodenum1': node_name_msh,
             'parfile': parfile,
             'nodeout': node_name_out,
-            'illumination_spectrum': os.path.join(self._cwd, self._spectrum)
+            'illumination_spectrum': os.path.join(self._cwd, self._spectrum),
+            'area_factor': '{0:.3e}'.format(1E11/self._device_length)
         }
         # Load the template file
         template_file_sdevice = open(os.path.join(self._cwd, self._sdevice_template), 'r')
@@ -426,15 +460,15 @@ class PIDModel:
             os.makedirs(output_folder)
 
         file_index = np.empty(len(self._simulation_time), dtype=np.dtype([
-            ('time (s)', 'i'), ('filename', 'S[100]')
+            ('time (s)', 'i'), ('filename', 'S[100]'), ('index', 'i')
         ]))
 
         for i, t in enumerate(self._simulation_time):
             file_name = 'n_t{0:d}_light_des.plt'.format(t)
             output_file = 'n_t{0:d}_light_des.tdr'.format(t)
-            r = subprocess.run(['tdx', '-d', os.path.join(data_folder, file_name),
+            subprocess.run(['tdx', '-d', os.path.join(data_folder, file_name),
                                 os.path.join(output_folder, output_file)])
-            file_index[i] = (t, output_file)
+            file_index[i] = (t, output_file, self._simulation_indices[i])
 
         df = pd.DataFrame(data=file_index)
         df.to_csv(path_or_buf=os.path.join(output_folder, file_index_csv), index=False)
