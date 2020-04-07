@@ -3817,7 +3817,9 @@ Material = "Metal" {
     Resistivity
     { * Resist(T) = Resist0 * ( 1 + TempCoef * ( T - 273 ) )
         *Resist0	= 2.4500e-06	# [ohm*cm]
-        Resist0	= 2e3	# [ohm*cm] * if need higher Al resistivity
+        * Resist0	= 2e3	# [ohm*cm] * if need higher Al resistivity
+        * TempCoef	= 4.5000e-03	# [1/K]
+        Resist0	= 1E10	# [ohm*cm] * if need higher Al resistivity
         TempCoef	= 4.5000e-03	# [1/K]
     }
 

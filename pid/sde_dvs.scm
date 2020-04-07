@@ -62,7 +62,7 @@
 (define ymax 1)
 (define ymin 0.1)
 ; Import optical generation file
-(define OptGenFile "./input_optical_generation3.plx")
+(define OptGenFile "${optical_generation_file}" )
 ; Import shunt conductivity file
 (define ShuntCondFile "${shunt_conductivity_file}")
 ;(define OptGenFile "ind_w180um_pass_opt.plx")
@@ -244,4 +244,4 @@
 
 
 ; * BUILDING MESH
-(sde:build-mesh "snmesh" "-a -c boxmethod" "${nodenum1}") ; save mesh files with name "nodnum1"
+(sde:build-mesh "snmesh" "-a -c boxmethod" "${nodenum}") ; save mesh files with name "nodnum"

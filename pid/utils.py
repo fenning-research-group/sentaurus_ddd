@@ -16,7 +16,7 @@ def next_file_name(path, filename) -> str:
     return '{0}-{1:d}'.format(filename, n)
 
 
-def make_new_folder(path: str):
+def make_new_folder(path: str) -> str:
     parent_path = os.path.dirname(path)
     if not os.path.exists(parent_path):
         raise FileNotFoundError('Could not find path: \'{0}\'.'.format(parent_path))
@@ -24,3 +24,4 @@ def make_new_folder(path: str):
     folder_name = next_file_name(parent_path, basename)
     full_path = os.path.join(parent_path, folder_name)
     os.makedirs(full_path)
+    return full_path

@@ -8,10 +8,12 @@ import logging
 import numpy as np
 import h5py
 import pandas as pd
+import shutil
 
 na_profile_type = np.dtype([('x (um)', 'd'), ('c (1/cm3)', 'd')])
 jv_dtype = np.dtype([('voltage (V)', 'd'), ('current (mA/cm2)', 'd')])
 na_file = "two_layers_D1=4E-16cm2ps_D2=1E-14cm2ps_Cs1E+20cm3_T85_time96hr_h1.0e-10_m1.0e+00_pnp.h5"
+
 
 class PIDModel:
     """
@@ -42,7 +44,8 @@ class PIDModel:
                  clathrate_file: str = "clathrates_cond.csv",
                  illuminated: bool = True,
                  contact_length: float = 5,
-                 device_length: float = 5):
+                 device_length: float = 50,
+                 optical_generation: str = None):
         """
 
         Parameters
@@ -64,6 +67,8 @@ class PIDModel:
             The length of the metal contact
         device_length: float
             The total length of the cell
+        optical_generation: str
+            The path to the optical generation file
         """
 
         self._clathrateFile: str = clathrate_file
@@ -77,6 +82,11 @@ class PIDModel:
         self._illuminated = illuminated
         self._contact_length = contact_length
         self._device_length = device_length
+        if optical_generation is None:
+            self._optical_generation_file = os.path.join(self._cwd, 'input_optical_generation.plx')
+        else:
+            self._optical_generation_file = optical_generation
+
         with h5py.File(na_h5_file, 'r') as hf:
             group_time = hf['time']
             self._temperature = float(group_time.attrs['temp_c'])
@@ -157,9 +167,9 @@ class PIDModel:
             # Estimate the conductivity
             conductivity = self.conductivity_model(ct[:])
             # Save conductivity profile in a .plx file
-            conductivity_filename = "conductivity_t{0:d}.plx".format(time[i])
+            conductivity_filename = "conductivity_t{0:.0f}.plx".format(time[i])
             conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
-            with open(conductivity_fullname) as fp:
+            with open(conductivity_fullname, 'w') as fp:
                 fp.write("\"MetalConductivity\"\n")
                 for xi, c in zip(x, conductivity):
                     line = "{0:1.4E}\t{1:1.4E}\n".format(xi, c)
@@ -262,7 +272,7 @@ class PIDModel:
         # The directory to save the data to
         output_folder = self._folder_path
         # name for the mesh file
-        mesh_name = "n_t{0:d}".format(time)
+        mesh_name = "n_t{0:d}".format(int(time))
         # Calculate segregation coefficient at each depth and the depth of the shunt
         cseg = concentration * self._segregation_coefficient
         L = len(cseg)
@@ -292,14 +302,15 @@ class PIDModel:
         # NOTE: CHECK IF IT MATTERS IF THE EXTERNAL PROFILE IS DEEPER THAN THE DEPTH DEFINED HERE. CURRENTLY IT IS.
         # *************** Generate the sde file based on the template *******************
         # Prepare the substitutions
-        conductivity_filename = "conductivity_t{0:d}.plx".format(time)
+        conductivity_filename = "conductivity_t{0:.0f}.plx".format(time)
         conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
         mesh_node_file = os.path.join(self._folder_path, mesh_name)
         substitutions_sde = {
             'dshunt_name': self._dshuntname,
             'shunt_depth': shunt_depth,
             'shunt_conductivity_file': conductivity_fullname,
-            'nodnum1': mesh_node_file,
+            'optical_generation_file': self._optical_generation_file,
+            'nodenum': mesh_node_file,
             'contact_length': self._contact_length,
             'device_length': self._device_length
         }
@@ -309,7 +320,7 @@ class PIDModel:
         # perform the substitutions
         result = src.substitute(substitutions_sde)
         template_file_sde.close()
-        output_filename_sde = 'sde_dvs_t{0}.cmd'.format(int(time))
+        output_filename_sde = 'sde_dvs_t{0:d}.cmd'.format(int(time))
         output_filename_sde = os.path.join(self._folder_path, output_filename_sde)
         # Save the sde file
         with open(output_filename_sde, 'w') as output_file:
@@ -327,9 +338,9 @@ class PIDModel:
         node_name_out = '{0}_{1}_des'.format(os.path.join(output_folder, mesh_name), out_mode)
         parfile = '{0}_t{1}.par'.format(os.path.join(output_folder, 'sdevice'), int(time))
         substitutions_sdevice = {
-            'nodenum1': node_name_msh,
+            'nodenum': node_name_msh,
             'parfile': parfile,
-            'nodeout': node_name_out,
+            'node_out': node_name_out,
             'illumination_spectrum': os.path.join(self._cwd, self._spectrum),
             'area_factor': '{0:.3e}'.format(1E11/self._device_length)
         }
@@ -404,7 +415,7 @@ class PIDModel:
         output_folder = self._folder_path
         # Limit to 5 significant digits
         s0_val = format(S0, '1.4e')
-        parfile = '{0}_t{1:d}.par'.format(os.path.join(output_folder, 'sdevice'), time)
+        parfile = '{0}_t{1:d}.par'.format(os.path.join(output_folder, 'sdevice'), int(time))
         substitutions = {
             'S0_val': s0_val,
         }
@@ -464,8 +475,8 @@ class PIDModel:
         ]))
 
         for i, t in enumerate(self._simulation_time):
-            file_name = 'n_t{0:d}_light_des.plt'.format(t)
-            output_file = 'n_t{0:d}_light_des.tdr'.format(t)
+            file_name = 'n_t{0:d}_light_des.plt'.format(int(t))
+            output_file = 'n_t{0:d}_light_des.tdr'.format(int(t))
             subprocess.run(['tdx', '-d', os.path.join(data_folder, file_name),
                                 os.path.join(output_folder, output_file)])
             file_index[i] = (t, output_file, self._simulation_indices[i])
@@ -495,10 +506,14 @@ class PIDModel:
 
     def run_sde(self, input_file: str) -> bool:
         try:
-            r = subprocess.run(['sde', '-e', '-l', input_file], shell=True)
-            if r.returncode != 0:
+            r = os.system('sde -e -l {0}'.format(input_file))  #subprocess.run(['sde', '-e', '-l', input_file], shell=True)
+            # if r.returncode != 0:
+            #     self.log('Error running sde.')
+            #     return False
+            if self.check_errfile():
                 self.log('Error running sde.')
                 return False
+
         except FileNotFoundError as e:
             self.log(e.strerror)
             return False
@@ -507,10 +522,11 @@ class PIDModel:
 
     def run_sdevice(self, input_file: str) -> bool:
         try:
-            r = subprocess.run(['sdevice', input_file], shell=True)
-            if r.returncode != 0:
-                self.log('Error running sdevice.')
-                return False
+            os.system('sdevice {0}'.format(input_file))
+            # r = subprocess.run(['sdevice', input_file], shell=True)
+            # if r.returncode != 0:
+            #     self.log('Error running sdevice.')
+            #     return False
         except FileNotFoundError as e:
             self.log(e.strerror)
             return False
@@ -530,11 +546,10 @@ class PIDModel:
         bool
             True if there is an error, False otherwise
         """
-        error_file = os.path.join(self._folder_path, 'errfile.txt')
+        error_file = os.path.join(os.path.dirname(self._cwd), 'errfile.txt')
         with open(error_file, 'r') as f:
             error_flag = f.read()
-
-        return bool(error_flag)
+        return not bool(error_flag)
 
     def __create_logger(self, logger_id: str = 'pid_logger') -> logging.Logger:
         logger_filename = os.path.join(self._folder_path, 'pidlogger.log')
@@ -558,13 +573,15 @@ class PIDModel:
         pid_logger.addHandler(ch)  # < handlers[1]
         return pid_logger
 
-    @staticmethod
-    def prepare_folder(folder: str, overwrite: bool = False):
+    def prepare_folder(self, folder: str, overwrite: bool = False):
         if not overwrite:
             folder_path = utils.make_new_folder(folder)
         else:
             folder_path = folder
             os.makedirs(folder_path)
+        opt_gen_file = os.path.basename(self._optical_generation_file)
+
+        shutil.copy(self._optical_generation_file, os.path.abspath(os.path.join(folder_path, opt_gen_file)))
         return folder_path
 
     def log(self, msg: str, level="INFO"):

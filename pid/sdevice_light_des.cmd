@@ -4,12 +4,12 @@
 File {
 	**** INPUT FILES
 	* geometry, contacts, doping and mesh
-	Grid ="${nodenum1}.tdr"
+	Grid ="${nodenum}.tdr"
 	* physical parameters
 	Parameter = "${parfile}"
 	* IlluminationSpectrum= "${illumination_spectrum}"
 	* Import the optical generation input in the mesh file, created in the structure editor file (section optical generation profile)
-	OpticalGenerationInput= "${nodenum1}.tdr"
+	OpticalGenerationInput= "${nodenum}.tdr"
 	**** OUTPUT FILES
 	* to visualize distributed variables
 	Plot = "${node_out}.tdr"
