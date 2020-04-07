@@ -29,7 +29,7 @@ Electrode
 	{ name="base_contact" voltage=0.0 }
 }
 
-# Start Physics section
+*--- Start Physics section
 Physics
 {
 	Mobility (
@@ -62,7 +62,7 @@ Physics
 			)
 		)
 	)
-} # End of main Physics section
+} * End of main Physics section
 
 * Include surface recombination at the silicon/SiNx interface
 * SRH recombination parameters will be defined separately below
@@ -70,16 +70,15 @@ Physics
 
 
 Plot{
-OpticalGeneration
+    OpticalGeneration
 }
 
-CurrentPlot{
-OpticalGeneration(Integrate(Semiconductor) )
-  OpticalGeneration(Integrate(material="Silicon") )
-  }
+CurrentPlot {
+    OpticalGeneration( Integrate(Semiconductor) )
+        OpticalGeneration(Integrate(material="Silicon") )
+    }
 
-Plot
-{
+Plot {
 * On-mesh-defined variables to be saved in the .tdr output file
 *- Doping Profiles
 		Doping DonorConcentration AcceptorConcentration
@@ -156,14 +155,14 @@ Solve
 
 	** raising em_contact to goal
 	** negative part
-	quasistationary (InitialStep = 0.01 MaxStep = 0.050 MinStep=0.005 * Max voltage step of 40 mV in the IV curve
-	Goal {name= "em_contact" voltage = 0}
+	quasistationary (
+	    InitialStep = 0.01 MaxStep = 0.10 MinStep=0.001 * Max voltage step of 40 mV in the IV curve
+	    Goal {name= "em_contact" voltage = 0.3}
 	)
 	{coupled {poisson electron hole} }
 	
-	quasistationary (InitialStep = 0.005 MaxStep = 0.050 MinStep=0.001
-	Goal {name= "em_contact" voltage = 0.8}
-	plot { range=(0, 1) intervals=2 }
-	)
-	{coupled {poisson electron hole} }
+	quasistationary (InitialStep = 0.005 MaxStep = 0.050 MinStep=0.0001
+	    Goal {name= "em_contact" voltage = 0.8}
+	    * plot { range=(0, 1) intervals=2 }
+	) {coupled {poisson electron hole} }
 }

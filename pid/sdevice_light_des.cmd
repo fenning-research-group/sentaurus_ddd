@@ -187,15 +187,15 @@ Solve {
 	** negative part
 	quasistationary (
 	    InitialStep = 0.01
-	    MaxStep = 0.050
-	    MinStep=0.005 * Max voltage step of 40 mV in the IV curve
+	    MaxStep = 0.050 * Max voltage step of 50 mV in the IV curve
+	    MinStep=0.005
 	    Goal {name= "em_contact" voltage = 0.3}
 	) {coupled {poisson electron hole} }
 	
 	quasistationary (
 	    InitialStep = 0.005
 	    MaxStep = 0.050
-	    MinStep=0.0001
+	    MinStep=0.001
 	    Goal {name= "em_contact" voltage = 0.8}
 	    *plot { range=(0, 1) intervals=2 }
 	) {coupled {poisson electron hole} }
