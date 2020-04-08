@@ -342,7 +342,8 @@ class PIDModel:
             'parfile': parfile,
             'node_out': node_name_out,
             'illumination_spectrum': os.path.join(self._cwd, self._spectrum),
-            'area_factor': '{0:.3e}'.format(1E11/self._device_length)
+            'area_factor': '{0:.3e}'.format(1E11/self._device_length),
+            'folder_path': self._folder_path
         }
         # Load the template file
         template_file_sdevice = open(os.path.join(self._cwd, self._sdevice_template), 'r')
@@ -471,13 +472,13 @@ class PIDModel:
             os.makedirs(output_folder)
 
         file_index = np.empty(len(self._simulation_time), dtype=np.dtype([
-            ('time (s)', 'i'), ('filename', 'S[100]'), ('index', 'i')
+            ('time (s)', 'i'), ('filename', 'U100'), ('index', 'i')
         ]))
 
         for i, t in enumerate(self._simulation_time):
             file_name = 'n_t{0:d}_light_des.plt'.format(int(t))
             output_file = 'n_t{0:d}_light_des.tdr'.format(int(t))
-            subprocess.run(['tdx', '-d', os.path.join(data_folder, file_name),
+            subprocess.run(['tdx', '-d', os.path.abspath(os.path.join(data_folder, file_name)),
                                 os.path.join(output_folder, output_file)])
             file_index[i] = (t, output_file, self._simulation_indices[i])
 

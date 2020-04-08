@@ -90,6 +90,10 @@ class Analysis:
 
         voltage = np.array(voltage_dataset)
         current = np.array(current_dataset)
+
+        voltage = voltage[current >= 0]
+        current = current[current >= 0]
+
         jv = np.array(
             [(v, j) for v, j in zip(voltage, current)]
         )
@@ -253,7 +257,10 @@ class Analysis:
             A dictionary containing the efficiency parameters
         """
         # Estimate the power density
-        power_density = current * voltage
+        f = interpolate.interp1d(current, voltage, kind='spline')
+        voltage_interp = np.linspace(np.amin(voltage), np.amax(voltage), num=200)
+        current_interp = f(voltage_interp)
+        power_density = voltage_interp * current_interp
         # Find max powerpoint
         pd_mpp = np.amax(power_density)
         idx_mpp = (np.abs(power_density - pd_mpp)).argmin()

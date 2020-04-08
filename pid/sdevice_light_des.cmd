@@ -27,7 +27,7 @@ Electrode {
 	{ name="base_contact" voltage=0.0 }
 }
 
-# Start Physics section
+* Start Physics section
 Physics {
 	Mobility ( DopingDependence )
 	Recombination ( SRH )
@@ -55,11 +55,11 @@ Physics {
 			)
 		)
 	)
-} # End of main Physics section
+} * End of main Physics section
 
 * Include surface recombination at the silicon/SiNx interface
 * SRH recombination parameters will be defined separately below
-# Physics (RegionInterface="SiNx-region/Si-profile-region") { Recombination(surfaceSRH) }
+* Physics (RegionInterface="SiNx-region/Si-profile-region") { Recombination(surfaceSRH) }
 
 
 Plot{
@@ -152,7 +152,7 @@ Math {
 	ExitOnFailure
 	* for IV, stop voltage ramp after Voc
 	BreakCriteria {
-		Current (Contact= "base_contact" minval= -1e-3)
+		Current (Contact= "base_contact" minval= -1e-2)
 	}
 
     * display simulation time in 'human' units
@@ -165,38 +165,30 @@ Math {
 
 * Solve the transport equations using the quasistationary command
 Solve {
-	* EQUILIBRIUM 
-	*coupled {poisson} * do not plot as we are not interested in equilibrium conditions
-	poisson
+	* EQUILIBRIUM
+    NewCurrentPrefix= "tmp_"
+    Poisson
+    NewCurrentPrefix= ""
+    Transient (
+        InitialTime= 0 FinalTime= 1.2
+        InitialStep= 1 MaxStep= 1 MinStep= 1e-5
+    ) { Coupled {Poisson Electron Hole} }
+    NewCurrentPrefix= ""
 
-	** TURN-ON
-	** if needed, add a transient step to help solving due to the large amount of optical generated carriers
-	* Transient (
-    *    InitialTime= 0 FinalTime= 1.2
-    *    InitialStep= 1 MaxStep= 1 MinStep= 1e-5
-    *) { Coupled {Poisson Electron Hole} }
- 
-	* decreasing em_contact to goal
-	* * quasistationary (InitialStep = 0.010 MaxStep = 0.050 MinStep=0.001
-					* * Goal {name= "em_contact" voltage = -0.1}
-					* * plot { range=(0, 1) intervals=1 }
-					* * )
-					* * {coupled {poisson electron hole} }
-
-	** raising em_contact to goal
-	** negative part
 	quasistationary (
 	    InitialStep = 0.01
-	    MaxStep = 0.050 * Max voltage step of 50 mV in the IV curve
-	    MinStep=0.005
+	    MaxStep = 0.10 * Max voltage step of 50 mV in the IV curve
+	    MinStep=0.001
 	    Goal {name= "em_contact" voltage = 0.3}
 	) {coupled {poisson electron hole} }
 	
 	quasistationary (
 	    InitialStep = 0.005
-	    MaxStep = 0.050
-	    MinStep=0.001
+	    MaxStep = 0.02
+	    MinStep=0.00001
 	    Goal {name= "em_contact" voltage = 0.8}
 	    *plot { range=(0, 1) intervals=2 }
 	) {coupled {poisson electron hole} }
+
+	System("rm -f ${folder_path}/tmp_*")
 }
