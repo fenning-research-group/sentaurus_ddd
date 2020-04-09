@@ -144,9 +144,9 @@
 (sdegeo:create-rectangle (position shunt1_pos_x1 0 0) (position shunt1_pos_x2 ${dshunt_name} 0) shuntmat "shunt1_region") ; Check if this command is really needed, since the window definition overwrites this region (maybe only useful for plotting).
 ; Define external conductivity profile for the shunt
 ;(sdedr:define-1d-external-profile "shunt_cond" ShuntCondFile "Scale" 1.0 "Erf" "Length" 0)
-(sdedr:define-1d-external-profile "shunt_cond" ShuntCondFile "Scale" 1.0 "Range" 0 ${dshunt_name} "Erf" "Factor" 0)
+(sdedr:define-1d-external-profile "shunt_cond" ShuntCondFile "Scale" 1.0 "Range" 0 ${dshunt_name} "Erf" "Length" 0.0001)
 ;(sdedr:define-1d-external-profile "shunt_cond" ShuntCondFile "Scale" 1.0 "Erf" "Factor" 0)
-; Define window for shunt ("Line" should be used, sde manual p. 561 + the window must be normal to the profile direction)
+; Define window for shunt ("Line" should be used, sde manual p. 561 + the window must be normal to the profile di0rection)
 ; (sdedr:define-refeval-window "shunt1_region" "Line" (position shunt1_pos_x1 0 0) (position shunt1_pos_x2 0 0) )
 (sdedr:define-refeval-window "shunt1_region" "Line" (position (* shunt1_pos_x1 1) 0 0) (position (* shunt1_pos_x2 1) 0 0) )
 ; Define conductivity placement
@@ -237,8 +237,8 @@
 	(position  (+ Wcontact 2) 1 0)
 )
 (sdedr:define-refinement-size "frontContact"
-	(/ Wcontact 10) 10 0
-	(/ Wcontact 10) 10 0
+	(/ Wcontact 10) (/ Wcontact 50)
+	(/ Wcontact 10) (/ Wcontact 50)
 )
 (sdedr:define-refinement-placement "frontContact" "frontContact" "frontContact" )
 

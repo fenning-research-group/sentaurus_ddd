@@ -17,7 +17,7 @@ def next_file_name(path, filename) -> str:
 
 
 def make_new_folder(path: str) -> str:
-    parent_path = os.path.dirname(path)
+    parent_path = os.path.dirname(os.path.abspath(path))
     if not os.path.exists(parent_path):
         raise FileNotFoundError('Could not find path: \'{0}\'.'.format(parent_path))
     basename = os.path.basename(path)

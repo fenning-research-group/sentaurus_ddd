@@ -274,16 +274,19 @@ class PIDModel:
         # name for the mesh file
         mesh_name = "n_t{0:d}".format(int(time))
         # Calculate segregation coefficient at each depth and the depth of the shunt
-        cseg = concentration * self._segregation_coefficient
+        cseg = np.abs(concentration) * self._segregation_coefficient
         L = len(cseg)
         # pdb.set_trace()
-        k = 0
-        # ATTENTION: need to modify this as the Na concentration is not a meaningful value here. The shunt depth is
-        # highly sensitive to the conductivity_model model and to segregation_coefficient.
-        while cseg[k] > 0.1 and k < L:
-            # Consider only the part of the [Na] profile in the stacking fault that is at least 1 cm-3
-            # (to remove useless extra points). TO CHANGE.
-            k += 1
+        # k = 0
+        # # ATTENTION: need to modify this as the Na concentration is not a meaningful value here. The shunt depth is
+        # # highly sensitive to the conductivity_model model and to segregation_coefficient.
+        # while cseg[k] > 0.1 and k < L:
+        #     # Consider only the part of the [Na] profile in the stacking fault that is at least 1 cm-3
+        #     # (to remove useless extra points). TO CHANGE.
+        #     k += 1
+        idx_threshold = cseg >= 0.1
+        cseg = cseg[idx_threshold]
+        x = x[idx_threshold]
 
         # **************************************************************************************************************
         # ATTENTION! This should be much more reliable than using cseg[k]>0.1, to be tested.
@@ -292,7 +295,12 @@ class PIDModel:
         # than 1e-3 S/cm (assuming 1e-3 is lower than the limit conductivity_model for shunting)
         # k=k+1
         # **************************************************************************************************************
-        shunt_depth = x[k] - x[0]  # Depth of the profile in um. The depth does not start at 0 so subtract x[0]
+        if time == 0 or len(x) == 0:
+            shunt_depth = 0
+        elif len(x) == 1:
+            shunt_depth = x[0]
+        else:
+            shunt_depth = np.amax(x)  # Depth of the profile in um. The depth does not start at 0 so subtract x[0]
 
         # Define an arbitrary shunt depth in case of very low concentrations
         # that would lead to a shunt depth of 0 um and cause Sentaurus to crash

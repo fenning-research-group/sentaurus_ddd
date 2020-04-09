@@ -3,6 +3,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import pid.utils
+import platform
 
 import numpy as np
 import pandas as pd
@@ -30,10 +31,10 @@ nu_t_dtype = np.dtype([
     ('efficiency', 'd')
 ])
 
-defaultPlotStyle = {'font.size': 14,
+defaultPlotStyle = {'font.size': 12,
                     'font.family': 'Arial',
                     'font.weight': 'regular',
-                    'legend.fontsize': 14,
+                    'legend.fontsize': 12,
                     'mathtext.fontset': 'stix',
                     'xtick.direction': 'in',
                     'ytick.direction': 'in',
@@ -50,12 +51,12 @@ defaultPlotStyle = {'font.size': 14,
                     'lines.markersize': 10,
                     'lines.markeredgewidth': 0.85,
                     'axes.labelpad': 5.0,
-                    'axes.labelsize': 16,
+                    'axes.labelsize': 12,
                     'axes.labelweight': 'regular',
                     'legend.handletextpad': 0.2,
                     'legend.borderaxespad': 0.2,
                     'axes.linewidth': 1.25,
-                    'axes.titlesize': 16,
+                    'axes.titlesize': 14,
                     'axes.titleweight': 'bold',
                     'axes.titlepad': 6,
                     'figure.titleweight': 'bold',
@@ -65,7 +66,9 @@ defaultPlotStyle = {'font.size': 14,
 class Analysis:
 
     def __init__(self, folder_path: str):
-        self._folder_path = folder_path
+        self._folder_path = os.path.abspath(folder_path)
+        if platform.system() == 'Windows':
+            self._folder_path = r'\\?\\' + self._folder_path
 
     def read_jv(self, h5_filename: str) -> np.ndarray:
         """
@@ -85,17 +88,17 @@ class Analysis:
         # main_group = 'collection/geometry_0/state_0'
         voltage_dataset_name = 'em_contact OuterVoltage'
         current_dataset_name = 'base_contact TotalCurrent'
-        voltage_dataset = self.tdr_get_plt_dataset(h5file=full_file, dataset_name=voltage_dataset_name)
-        current_dataset = self.tdr_get_plt_dataset(h5file=full_file, dataset_name=current_dataset_name)
+        voltage = self.tdr_get_plt_dataset(h5file=full_file, dataset_name=voltage_dataset_name)
+        current = self.tdr_get_plt_dataset(h5file=full_file, dataset_name=current_dataset_name)
 
-        voltage = np.array(voltage_dataset)
-        current = np.array(current_dataset)
+        # voltage = np.array(voltage_dataset['values'])
+        # current = np.array(current_dataset['values'])
 
         voltage = voltage[current >= 0]
         current = current[current >= 0]
 
         jv = np.array(
-            [(v, j) for v, j in zip(voltage, current)]
+            [(v, j) for v, j in zip(voltage, current)], dtype=jv_dtype
         )
         return jv
 
@@ -112,13 +115,13 @@ class Analysis:
         -------
 
         """
-        df = pd.read_csv(filepath_or_buffer=csv_index)
+        df = pd.read_csv(filepath_or_buffer=os.path.join(self._folder_path, 'jv_plots', csv_index))
         folder_path = os.path.dirname(csv_index)
-        results_path = os.path.join(folder_path, 'efficiency_results.csv')
+        results_path = os.path.join(self._folder_path, 'jv_plots', 'efficiency_results.csv')
         results = np.empty(len(df), dtype=nu_t_dtype)
         for i, row in df.iterrows():
             t = float(row['time (s)'])
-            jv = self.read_jv(h5_filename=row['filename'])
+            jv = self.read_jv(h5_filename=os.path.join(self._folder_path, 'jv_plots', row['filename']))
             nu_data = self.estimate_efficiency(voltage=jv['voltage (V)'], current=jv['current (mA/cm2)'])
             results[i] = (
                 t, nu_data['jsc'], nu_data['voc'], nu_data['pd_mpp'], nu_data['v_mpp'], nu_data['j_mpp'],
@@ -148,9 +151,9 @@ class Analysis:
         """
 
         efficiency_data = self.batch_efficiency(csv_index=csv_index)
-        time_s = efficiency_data['time_s']
+        time_s = efficiency_data['time (s)']
         time_h = time_s/3600
-        df = pd.read_csv(filepath_or_buffer=csv_index)
+        df = pd.read_csv(filepath_or_buffer=os.path.join(self._folder_path, 'jv_plots', csv_index))
         results_path = os.path.dirname(csv_index)
 
         mpl.rcParams.update(defaultPlotStyle)
@@ -170,9 +173,10 @@ class Analysis:
             # E = hf['L1'].attrs['electric_field_eff']
             # TC = hf['time'].attrs['temp_c']
 
+        plt.ioff()
         fig = plt.figure()
-        fig.set_size_inches(6.5, 3, forward=True)
-        fig.subplots_adjust(hspace=0.15, wspace=0.45)
+        fig.set_size_inches(6.5, 6.0, forward=True)
+        fig.subplots_adjust(hspace=0.35, wspace=0.5)
         gs0 = gridspec.GridSpec(ncols=1, nrows=2, figure=fig, width_ratios=[1])
         gs00 = gridspec.GridSpecFromSubplotSpec(nrows=1, ncols=2,
                                                 subplot_spec=gs0[0])
@@ -188,17 +192,19 @@ class Analysis:
             profiles = group_si['concentration']
             for i, row in df.iterrows():
                 ct_ds = 'ct_{0:d}'.format(row['index'])
+                t = float(row['time (s)'])/3600
                 c = np.array(profiles[ct_ds])
-                jv = self.read_jv(h5_filename=row['filename'])
-                ax1.plot(jv['voltage (V)'], jv['current (mA/cm2)'], '-', color=jv_colors[i])
+                jv = self.read_jv(h5_filename=os.path.join(self._folder_path, 'jv_plots', row['filename']))
+                ax1.plot(jv['voltage (V)'], jv['current (mA/cm2)'], '-', color=cmap(normalize(t)))
                 ax3.plot(x, c, color=jv_colors[i])
 
         # interpoate the efficiency
-        f = interpolate.interp1d(time_h, efficiency_data['efficiency'], kind='spline')
+        f = interpolate.interp1d(time_h, efficiency_data['efficiency'], kind='slinear', fill_value="extrapolate")
         t_interp = np.linspace(np.amin(time_h), np.amax(time_h), num=500)
         nu_interp = f(t_interp)
-        ax2.scatter(time_h, efficiency_data['efficiency']*1000, marker='o', facecolors='none', label='Simulation')
-        ax2.plot(time_h, nu_interp, ':', color='k', dashes=(5, 6), label='Guide to\nthe eye')
+        ax2.plot(time_h, efficiency_data['efficiency']*100, marker='o', ls='none', fillstyle='none', color='C0',
+                 label='Simulation')
+        ax2.plot(t_interp, nu_interp*100, ':', color='k', dashes=(5, 6), label='Guide to\nthe eye', lw=1.5)
 
         divider = make_axes_locatable(ax1)
         cax = divider.append_axes("right", size="7.5%", pad=0.03)
@@ -222,6 +228,8 @@ class Analysis:
         ax1.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
         ax1.yaxis.set_minor_locator(mticker.AutoMinorLocator(4))
 
+        ax2.set_ylim(0, np.amax(nu_interp*1.25)*100)
+
         ax2.xaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
         ax2.xaxis.set_minor_locator(mticker.AutoMinorLocator(4))
         ax2.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
@@ -234,9 +242,9 @@ class Analysis:
         ax3.yaxis.set_major_locator(locmaj)
         ax3.yaxis.set_minor_locator(locmin)
 
-        fig.savefig(os.path.join(results_path, 'efficiency_t.png'), dpi=600)
-
         plt.tight_layout()
+        fig.savefig(os.path.join(self._folder_path, 'jv_plots', 'efficiency_t.png'), dpi=600)
+
         plt.show()
 
     @staticmethod
@@ -257,7 +265,7 @@ class Analysis:
             A dictionary containing the efficiency parameters
         """
         # Estimate the power density
-        f = interpolate.interp1d(current, voltage, kind='spline')
+        f = interpolate.interp1d(voltage, current, kind='slinear', fill_value="extrapolate")
         voltage_interp = np.linspace(np.amin(voltage), np.amax(voltage), num=200)
         current_interp = f(voltage_interp)
         power_density = voltage_interp * current_interp
@@ -265,13 +273,13 @@ class Analysis:
         pd_mpp = np.amax(power_density)
         idx_mpp = (np.abs(power_density - pd_mpp)).argmin()
         # Find the V_mpp
-        v_mpp = voltage[idx_mpp]
+        v_mpp = voltage_interp[idx_mpp]
         # Find J_mpp
-        j_mpp = current[idx_mpp]
+        j_mpp = current_interp[idx_mpp]
         # Find Jsc
-        jsc = current[(np.abs(voltage - 0)).argmin()]
+        jsc = current_interp[(np.abs(voltage_interp - 0)).argmin()]
         # Find Voc
-        voc = voltage[(np.abs(current - 0)).argmin()]
+        voc = voltage_interp[(np.abs(current_interp - 0)).argmin()]
         # Find efficiency
         nu = pd_mpp / 100  # Integrated AM1.5g power density 100 mA/cm2
         # wrap everything in a dictionary
@@ -295,10 +303,12 @@ class Analysis:
 
     def tdr_get_plt_dataset(self, h5file: str, dataset_name: str):
         available_datasets = self.tdr_list_plt_datasets(h5file=h5file)
+        # print(available_datasets)
         main_group = 'collection/geometry_0/state_0'
+        ds = None
         if dataset_name in available_datasets:
+            # print('reading {0}: {1}'.format(dataset_name, available_datasets[dataset_name]))
             with h5py.File(h5file, 'r') as hf:
-                ds = hf[main_group][dataset_name]
-        else:
-            ds = None
+                ds = np.array(hf[main_group][available_datasets[dataset_name]]['values'])
+                # print(np.array(ds['values']))
         return ds

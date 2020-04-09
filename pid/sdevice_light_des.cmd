@@ -30,7 +30,11 @@ Electrode {
 * Start Physics section
 Physics {
 	Mobility ( DopingDependence )
-	Recombination ( SRH )
+	Recombination (
+	    SRH(DopingDependence)
+	    Auger(WithGeneration)
+	    Radiative
+	)
 
 	* Define area of the contacts (in um)
 	AreaFactor= ${area_factor}
@@ -66,6 +70,10 @@ Plot{
     OpticalGeneration
 }
 
+Plot {
+    MetalConductivity
+}
+
 CurrentPlot {
     AbsorbedPhotonDensity(Integrate(Semiconductor))
     SRH(Integrate(Semiconductor))
@@ -98,7 +106,6 @@ Plot {
     *- Band2Band Tunneling & II
             eBand2BandGeneration hBand2BandGeneration Band2BandGeneration
             eAvalanche hAvalanche Avalanche
-		
 }
 
 Math {
@@ -152,7 +159,7 @@ Math {
 	ExitOnFailure
 	* for IV, stop voltage ramp after Voc
 	BreakCriteria {
-		Current (Contact= "base_contact" minval= -1e-2)
+		Current (Contact= "base_contact" minval= -1e-1)
 	}
 
     * display simulation time in 'human' units

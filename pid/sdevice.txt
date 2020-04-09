@@ -1779,7 +1779,8 @@ Material = "Silicon" {
       * tau(T) = tau * ( (T/300)^Talpha )          (TempDep)
       * tau(T) = tau * exp( Tcoeff * ((T/300)-1) ) (ExpTempDep)
         taumin	= 0.0000e+00 ,	0.0000e+00	# [s]
-        taumax	= 1.0000e-05 ,	3.0000e-06	# [s]
+        * taumax	= 1.0000e-05 ,	3.0000e-06	# [s]
+        taumax	= 400.0000e-06 ,	400.0000e-06	# [s]
         Nref	= 1.0000e+16 ,	1.0000e+16	# [cm^(-3)]
         gamma	= 1 ,	1	# [1]
         Talpha	= -1.5000e+00 ,	-1.5000e+00	# [1]
@@ -2059,8 +2060,7 @@ Material = "Silicon" {
     }
 
 
-    BarrierTunneling
-    { * Non Local Barrier Tunneling
+    BarrierTunneling { * Non Local Barrier Tunneling
       * G(r) = g*A*T/kB*F(r)*Pt(r)*ln[(1+exp((E(r)-Es)/kB/T))/(1+exp((E(r)-Em)/kB/T))]
       * where:
       *     Pt(r) is WKB approximation for the tunneling probability
@@ -2082,8 +2082,7 @@ Material = "Silicon" {
     }
 
 
-    MSPeltierHeat
-    { * Metal/Semiconductor Peltier heat parameters
+    MSPeltierHeat { * Metal/Semiconductor Peltier heat parameters
       * Hpeltier = j*(alpha*Ediff + (1-alpha)*deltaE)/e0   Peltier Heat
       * where:
       *     j is the current density
@@ -2918,9 +2917,9 @@ Material = "Silicon" {
     }
 
 
-    }
+} # End of material Silicon
 
-    Material = "Nitride" {
+Material = "Nitride" {
 
     Epsilon
     { *  Ratio of the permittivities of material and vacuum
@@ -3220,9 +3219,10 @@ Material = "Silicon" {
     }
 
 
-    }
+} # End material nitride
 
-    Material = "Aluminum" {
+
+Material = "Aluminum" {
 
     Epsilon
     { *  Ratio of the permittivities of material and vacuum
@@ -3581,11 +3581,10 @@ Material = "Silicon" {
     Resistivity
     { * Resist(T) = Resist0 * ( 1 + TempCoef * ( T - 273 ) )
         Resist0	= 2.4500e-06	# [ohm*cm]
-        *Resist0	= 2.4500e+02	# [ohm*cm] * if need higher Al resistivity
         TempCoef	= 4.5000e-03	# [1/K]
     }
 
-} # end of material Si
+} # end of material Aluminum
 
 * Material defined for the shunted areas
 Material = "Metal" {
@@ -3740,8 +3739,10 @@ Material = "Metal" {
 
     Bandgap
     { * For conductors Band Gap is zero and the following parameters are used:
-        WorkFunction	= 4.1	# [eV] # Same as Al
-        FermiEnergy	= 11.7	# [eV]
+        * WorkFunction	= 4.1	# [eV] # Same as Al
+        * FermiEnergy	= 11.7	# [eV]
+        WorkFunction	= 2.36	# [eV] # Same as Al
+        FermiEnergy	= 3.24	# [eV]
       * for backward compatibility Chi0 could be used to define the work function.
     }
 
@@ -3819,7 +3820,7 @@ Material = "Metal" {
         *Resist0	= 2.4500e-06	# [ohm*cm]
         * Resist0	= 2e3	# [ohm*cm] * if need higher Al resistivity
         * TempCoef	= 4.5000e-03	# [1/K]
-        Resist0	= 1E10	# [ohm*cm] * if need higher Al resistivity
+        Resist0	= 0.007566	# [ohm*cm] * if need higher Al resistivity
         TempCoef	= 4.5000e-03	# [1/K]
     }
 
@@ -3827,9 +3828,9 @@ Material = "Metal" {
 } #end of metal material
 
 # Definition of a specific SRV value
-RegionInterface = "SiNx-region/Si-profile-region" {
-    SurfaceRecombination {
-        S0 = ${S0_val} , ${S0_val} # [cm/s]
-        Sref = 0 * [1]
-    }
-}
+# RegionInterface = "SiNx-region/Si-profile-region" {
+#    SurfaceRecombination {
+#       S0 = ${S0_val} , ${S0_val} # [cm/s]
+#        Sref = 0 * [1]
+#    }
+#}
