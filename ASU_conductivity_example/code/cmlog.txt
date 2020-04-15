@@ -1,0 +1,5 @@
+DATE: 09/18/19 - 09/18/19 cmlog.txt
+
+This localhost (server) information:
+	Name:    denali
+	Address: 10.15.116.244
