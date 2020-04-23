@@ -61,10 +61,17 @@ Physics {
 	)
 } * End of main Physics section
 
+Physics (Region= "Region.Shunt1") {
+    Traps(
+        (Donor    fromValBand Gaussian EnergyMid=0.088 EnergySig=0.1 Conc=1 SFactor="DeepLevels" eXsection=2.0E-15 hXsection=2.0E-15)
+        (Acceptor fromValBand Gaussian EnergyMid=0.139 EnergySig=0.1 Conc=1 SFactor="DeepLevels" eXsection=4.3E-15 hXsection=4.3E-15)
+        (Acceptor fromValBand Gaussian EnergyMid=0.270 EnergySig=0.1 Conc=1 SFactor="DeepLevels" eXsection=3.8E-15 hXsection=3.8E-15)
+    )
+}
 
 * Include surface recombination at the silicon/SiNx interface
 * SRH recombination parameters will be defined separately below
-Physics (RegionInterface="SiNx-region/Si-profile-region") { Recombination(surfaceSRH) }
+* Physics (RegionInterface="SiNx-region/Si-profile-region") { Recombination(surfaceSRH) }
 
 
 
@@ -99,12 +106,12 @@ Plot {
     tSRHrecombination
     *- Band2Band Tunneling & II
             eBand2BandGeneration hBand2BandGeneration Band2BandGeneration
-            * eAvalanche hAvalanche Avalanche
+            eAvalanche hAvalanche Avalanche
 
-    OpticalGeneration, MetalConductivity *, DeepLevels
-    *- Traps
-    * eTrappedCharge hTrappedCharge
-    * eGapStatesRecombination hGapStatesRecombination
+    OpticalGeneration, DeepLevels
+    *- Trapps
+    eTrappedCharge hTrappedCharge
+    eGapStatesRecombination hGapStatesRecombination
 }
 
 Math {
@@ -125,13 +132,14 @@ Math {
     eDrForceRefDens=1e10
     hDrForceRefDens=1e10
     * maximum number of iteration at each step
+    *Iterations=20
     * choosing the solver of the linear system
-    Method=ParDiSo
-    * Method= Blocked
-    * Method= ILS
+    * Method=ParDiSo
+    *Method= Blocked
+    Method= ILS
 	SubMethod= ParDiSo
 
-	* SubMethod= ILS(set= 12) * Selects ILS as linear solver; use "set 12" below
+	*SubMethod= ILS(set= 12) * Selects ILS as linear solver; use "set 12" below
 	ILSrc= "
 	set (1) { // Default - repeated for reference
 	  iterative(gmres(100),tolrel=1e-8,tolunprec=1e-4,tolabs=0,maxit=200);
@@ -186,7 +194,7 @@ Solve {
 	    MaxStep = 0.10 * Max voltage step of 50 mV in the IV curve
 	    MinStep=0.001
 	    Goal {name= "em_contact" voltage = 0.3}
-	) {coupled {poisson electron hole} }
+	) {coupled {poisson electron hole traps} }
 	
 	quasistationary (
 	    InitialStep = 0.005
@@ -194,7 +202,7 @@ Solve {
 	    MinStep=0.00001
 	    Goal {name= "em_contact" voltage = 0.8}
 	    *plot { range=(0, 1) intervals=2 }
-	) {coupled {poisson electron hole} }
+	) {coupled {poisson electron hole traps} }
 
 	System("rm -f ${folder_path}/tmp_*")
 }

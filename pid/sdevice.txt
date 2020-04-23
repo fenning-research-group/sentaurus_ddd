@@ -1780,7 +1780,7 @@ Material = "Silicon" {
       * tau(T) = tau * exp( Tcoeff * ((T/300)-1) ) (ExpTempDep)
         taumin	= 0.0000e+00 ,	0.0000e+00	# [s]
         * taumax	= 1.0000e-05 ,	3.0000e-06	# [s]
-        taumax	= 400.0000e-06 ,	400.0000e-06	# [s]
+        taumax	= 5.0000e-03 ,	5.0000E-3	# [s]
         Nref	= 1.0000e+16 ,	1.0000e+16	# [cm^(-3)]
         gamma	= 1 ,	1	# [1]
         Talpha	= -1.5000e+00 ,	-1.5000e+00	# [1]
@@ -3827,10 +3827,13 @@ Material = "Metal" {
 
 } #end of metal material
 
-# Definition of a specific SRV value
-# RegionInterface = "SiNx-region/Si-profile-region" {
-#    SurfaceRecombination {
-#       S0 = ${S0_val} , ${S0_val} # [cm/s]
-#        Sref = 0 * [1]
-#    }
-#}
+* Definition of a specific SRV value
+MaterialInterface = "Si3N4/Silicon" {
+    SurfaceRecombination {
+       S0 = ${S0_val} , ${S0_val} # [cm/s]
+        Sref = 0 * [1]
+    }
+}
+
+# Definition of conductivities at each region within the shunt
+${shunt_conductivity}

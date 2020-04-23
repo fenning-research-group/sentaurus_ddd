@@ -9,6 +9,7 @@ import numpy as np
 import h5py
 import pandas as pd
 import shutil
+from scipy import interpolate
 
 na_profile_type = np.dtype([('x (um)', 'd'), ('c (1/cm3)', 'd')])
 jv_dtype = np.dtype([('voltage (V)', 'd'), ('current (mA/cm2)', 'd')])
@@ -29,7 +30,7 @@ class PIDModel:
                             'WARNING': logging.WARNING,
                             'ERROR': logging.ERROR,
                             'CRITICAL': logging.CRITICAL}
-    _sde_template: str = 'sde_dvs.scm'
+    _sde_template: str = 'metallic_shunt_sde_dvs.scm'
     _sdevice_template_dark: str = 'sdevice_dark_des.cmd'
     _sdevice_template_light: str = 'sdevice_light_des.cmd'
     _simulation_time: np.ndarray = np.array([])
@@ -165,19 +166,128 @@ class PIDModel:
                 group_si_c = hf['/L2/concentration']
                 ct = np.array(group_si_c[ct_ds])
             # Estimate the conductivity
-            conductivity = self.conductivity_model(ct[:])
+            c_shunt = ct * self._segregation_coefficient
             # Save conductivity profile in a .plx file
-            conductivity_filename = "conductivity_t{0:.0f}.plx".format(time[i])
-            conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
-            with open(conductivity_fullname, 'w') as fp:
-                fp.write("\"MetalConductivity\"\n")
-                for xi, c in zip(x, conductivity):
+            concentration_filename = "na_profile_t{0:.0f}.plx".format(time[i])
+            concentration_fullname = os.path.join(self._folder_path, concentration_filename)
+            with open(concentration_fullname, 'w') as fp:
+                fp.write("\"DeepLevels\"\n")
+                line = "75E-3\t0\n"
+                line += "50E-3\t0\n"
+                line += "25E-3\t0\n"
+                line += "1E-4\t0\n"
+                fp.write(line)
+                for xi, c in zip(x, c_shunt):
                     line = "{0:1.4E}\t{1:1.4E}\n".format(xi, c)
                     fp.write(line)
-            self.log('Created concentration file \'{0}\'.'.format(conductivity_fullname))
+            self.log('Created concentration file \'{0}\'.'.format(concentration_fullname))
             # Update the parfile with the concentration
             self.srv_param(cNa=ct, time=time[i], use_srv=True)
             [sde_filename, sdevice_filename] = self.update_files(concentration=ct, x=x, time=time[i])
+            # Run sde
+            success: bool = self.run_sde(input_file=sde_filename)
+            if not success:
+                raise RuntimeError('Error running sde. Stopping program execution.')
+            # Run sdevice
+            self.run_sdevice(input_file=sdevice_filename)
+
+        self.log('Converting JV plots to tdr files...')
+        self.plt2tdr()
+        final_string = "Results in {0}".format(self._folder_path)
+        self.log(final_string)
+
+    def run_pid_metal(self, start_step: int = 0, end_step: int = 0, skip_nb: int = 0, overwrite_folder: bool = False):
+        """
+        Start the sdevice simulation for each C(t) in [startstep:skip_nb:endstep]
+
+        Parameters
+        ----------
+        start_step: int
+            Number of the step where simulations will start. Should be 0 unless a different starting step is wanted
+            (for instance if previous steps have already been run before).
+        end_step: int
+            Number of the step where the simulations will end. If set to 0, simulations will run at all time points in
+            the h5file containing the sodium migration profiles
+        skip_nb: int
+            Number of time points to skip in the sodium migration dataset at each iteration (0 by default).
+            If set to 1, every second point will be run. If set to 2, every third point. etc.
+        overwrite_folder: bool
+            If the directory already exists, False will create a new one while True will save in the same one.
+            By default changedir=False.
+
+        Returns
+        -------
+
+        """
+        skip_nb = abs(int(skip_nb))
+        start_step = abs(int(start_step))
+        end_step = abs(int(end_step))
+
+        if skip_nb == 0:
+            self.log('Trying to set skip_nb={0:d} in run_pid method. Reverting to skip_nb=1.'.format(skip_nb),
+                     level='WARNING')
+            skip_nb = 1
+        elif start_step > end_step:
+            self.log('Trying to set start_step={0:d} > end_step{1:d} in run_pid method. Reverting to skip_nb=1.'.format(
+                start_step, end_step),
+                level='WARNING')
+            start_step = 0
+            end_step = 0
+            skip_nb = 1
+
+        self._folder_path: str = self.prepare_folder(self._folder_name, overwrite_folder)
+        self._logger: logging.Logger = self.__create_logger(logger_id='pid_logger')
+
+        # Start simulation log
+        now = datetime.now()
+        # time_stamp = now.strftime('%Y%m%d')
+        iso_date = now.astimezone().isoformat()
+        self.log('Simulation starting {0}'.format(iso_date))
+        self.log('Temperature: {0} °C'.format(self._temperature))
+        self.log('Shunt segregation coeffiecient: {0:g}'.format(self._segregation_coefficient))
+        self.log('Sodium profiles simulation file: {0}'.format(self._NaProfileFileName))
+        self.log('Simulation starting step: {0}'.format(start_step))
+        self.log('Step used to skip sodium profiles in the h5py file: {0}'.format(skip_nb))
+        self.log('Simulation ending step: {0}'.format(end_step))
+        self.log('Sentaurus editor template file: {0}'.format(self._sde_template))
+        self.log('Sentaurus device template file: {0}'.format(self._sdevice_template))
+
+        # factor=50 # factor = 100 to have a final depth of 600 nm, as in "For_JV_85C.h5" the final depth is 6 nm.
+        # NOTE: Later, with the correct Na profiles, it should be just one.
+        factor = 1
+        with h5py.File(self._NaProfileFileName, 'r') as hf:
+            time = np.array(hf.get('time'))
+            depth = np.array(hf.get('L2/x'))
+
+        x = (depth - depth[0]) * factor  # Difference because x does not start at 0
+        self._simulation_time = np.array([time[i] for i in range(start_step, end_step + skip_nb, skip_nb)])
+        self._simulation_indices = np.array([i for i in range(start_step, end_step + skip_nb, skip_nb)])
+
+        for i in range(start_step, end_step + skip_nb, skip_nb):
+            # Get the Na concentration at time t = ti
+            ct_ds = 'ct_{0:d}'.format(i)
+            with h5py.File(self._NaProfileFileName, 'r') as hf:
+                group_si_c = hf['/L2/concentration']
+                ct = np.array(group_si_c[ct_ds])
+            # Estimate the conductivity
+            conductivity = self.conductivity_model(ct[:])
+            # # Save conductivity profile in a .plx file
+            # conductivity_filename = "conductivity_t{0:.0f}.plx".format(time[i])
+            # conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
+            # with open(conductivity_fullname, 'w') as fp:
+            #     fp.write("\"MetalConductivity\"\n")
+            #     line = "75E-3\t0\n"
+            #     line += "50E-3\t0\n"
+            #     line += "25E-3\t0\n"
+            #     line += "1E-4\t0\n"
+            #     fp.write(line)
+            #     for xi, c in zip(x, conductivity):
+            #         line = "{0:1.4E}\t{1:1.4E}\n".format(xi, c)
+            #         fp.write(line)
+            # self.log('Created concentration file \'{0}\'.'.format(conductivity_fullname))
+            # Update the parfile with the concentration
+            # self.srv_param(cNa=ct, time=time[i], use_srv=True)
+            [sde_filename, sdevice_filename] = self.update_files_metal(concentration=ct, x=x, time=time[i])
             # Run sde
             success: bool = self.run_sde(input_file=sde_filename)
             if not success:
@@ -252,7 +362,7 @@ class PIDModel:
     def update_files(self, concentration: np.ndarray, x: np.ndarray,
                      time: Union[int, float]) -> List[str]:
         """
-        This method modifyies the Sentaurus input files to include updated shunt depth and modified external files
+        This method modifies the Sentaurus input files to include updated shunt depth and modified external files
         (including the .par file). Creates a shunt with spatially varying conductivity_model based on doping profiles
         calculated at each time.
 
@@ -310,17 +420,18 @@ class PIDModel:
         # NOTE: CHECK IF IT MATTERS IF THE EXTERNAL PROFILE IS DEEPER THAN THE DEPTH DEFINED HERE. CURRENTLY IT IS.
         # *************** Generate the sde file based on the template *******************
         # Prepare the substitutions
-        conductivity_filename = "conductivity_t{0:.0f}.plx".format(time)
+        conductivity_filename = "na_profile_t{0:.0f}.plx".format(time)
         conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
         mesh_node_file = os.path.join(self._folder_path, mesh_name)
         substitutions_sde = {
             'dshunt_name': self._dshuntname,
             'shunt_depth': shunt_depth,
-            'shunt_conductivity_file': conductivity_fullname,
+            'shunt_profile_file': conductivity_fullname,
             'optical_generation_file': self._optical_generation_file,
             'nodenum': mesh_node_file,
             'contact_length': self._contact_length,
-            'device_length': self._device_length
+            'device_length': self._device_length,
+            'c0': np.amax(concentration * self._segregation_coefficient)
         }
         # Load the template file
         template_file_sde = open(os.path.join(self._cwd, self._sde_template), 'r')
@@ -350,8 +461,9 @@ class PIDModel:
             'parfile': parfile,
             'node_out': node_name_out,
             'illumination_spectrum': os.path.join(self._cwd, self._spectrum),
-            'area_factor': '{0:.3e}'.format(1E11/self._device_length),
-            'folder_path': self._folder_path
+            'area_factor': '{0:.3e}'.format(1E11 / self._device_length),
+            'folder_path': self._folder_path,
+            'dshunt_name': self._dshuntname
         }
         # Load the template file
         template_file_sdevice = open(os.path.join(self._cwd, self._sdevice_template), 'r')
@@ -369,8 +481,179 @@ class PIDModel:
 
         return [output_filename_sde, output_filename_sdevice]
 
-    def srv_param(self, cNa: Union[np.ndarray, List[float]], time: Union[int, float],
-                  use_srv: bool) -> str:
+    def update_files_metal(self, concentration: np.ndarray, x: np.ndarray,
+                           time: Union[int, float], use_srv: bool = True) -> List[str]:
+        """
+        This method modifies the Sentaurus input files to include updated shunt depth and modified external files
+        (including the .par file). Creates a shunt with spatially varying conductivity_model based on doping profiles
+        calculated at each time.
+
+        Parameters
+        ----------
+        concentration: np.ndarray
+            Sodium concentration from the h5 file
+        x: np.ndarray
+            depth from the h5 file (list)
+        time: Union[int, float]
+            time from the h5 file (int or float)
+        use_srv: bool
+            If true updates the parameter file with the estimated SRV
+
+        Returns
+        -------
+        List[str]
+            [sde_file_path, sdevice_file_path]
+        """
+        # The directory to save the data to
+        output_folder = self._folder_path
+        # name for the mesh file
+        mesh_name = "n_t{0:d}".format(int(time))
+        # Calculate segregation coefficient at each depth and the depth of the shunt
+        cseg = np.abs(concentration) * self._segregation_coefficient
+
+        # Get the conductivity
+        conductivity = self.conductivity_model(cseg)
+        idx_threshold = conductivity >= 1E-3
+        conductivity = conductivity[idx_threshold]
+        x = x[idx_threshold]
+
+        if time == 0 or len(x) == 0:
+            shunt_depth = 0
+        elif len(x) == 1:
+            shunt_depth = x[0]
+        else:
+            shunt_depth = np.amax(x)  # Depth of the profile in um. The depth does not start at 0 so subtract x[0]
+
+        if len(x) > 100:
+            # Interpolate the profile to get only 100 points
+            y = np.linspace(0, shunt_depth, 101)
+            dy = y[1] - y[0]
+            f = interpolate.interp1d(x, conductivity, kind='slinear', fill_value="extrapolate")
+            y = y[0:-1]
+            sigma = f(y)
+        elif len(x) >= 1:
+            y = x[0:-1]
+            dy = y[1] - y[0]
+            sigma = conductivity[0:-1]
+        else:
+            y = np.zeros(1)
+            dy = 0
+            sigma = y
+        box_indices = ' '.join(['%d' % i for i in range(len(y))])
+
+        # *************** Generate the sde file based on the template *******************
+        # Prepare the substitutions
+        conductivity_filename = "na_profile_t{0:.0f}.plx".format(time)
+        conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
+        mesh_node_file = os.path.join(self._folder_path, mesh_name)
+        substitutions_sde = {
+            'dshunt_name': self._dshuntname,
+            'shunt_depth': shunt_depth,
+            'optical_generation_file': self._optical_generation_file,
+            'nodenum': mesh_node_file,
+            'contact_length': self._contact_length,
+            'device_length': self._device_length,
+            'shunt_positions': ' '.join(map(str, y)),
+            'shunt_sigmas': ' '.join(map(str, sigma)),
+            'shunt_index': box_indices,
+            'shunt_dy': dy
+        }
+        # Load the template file
+        template_file_sde = open(os.path.join(self._cwd, self._sde_template), 'r')
+        src = Template(template_file_sde.read())
+        # perform the substitutions
+        result = src.substitute(substitutions_sde)
+        template_file_sde.close()
+        output_filename_sde = 'sde_dvs_t{0:d}.cmd'.format(int(time))
+        output_filename_sde = os.path.join(self._folder_path, output_filename_sde)
+        # Save the sde file
+        with open(output_filename_sde, 'w') as output_file:
+            output_file.write(result)
+
+        self.log('Created Sentaurus input file \'{0}\'.'.format(output_filename_sde))
+
+        # *************** Generate the sdevice file based on the template *******************
+        # Prepare the substitutions
+        node_name_msh = '{0}_msh'.format(os.path.join(output_folder, mesh_name))
+        if self._illuminated:
+            out_mode = 'light'
+        else:
+            out_mode = 'dark'
+        node_name_out = '{0}_{1}_des'.format(os.path.join(output_folder, mesh_name), out_mode)
+        parfile = '{0}_t{1}.par'.format(os.path.join(output_folder, 'sdevice'), int(time))
+        substitutions_sdevice = {
+            'nodenum': node_name_msh,
+            'parfile': parfile,
+            'node_out': node_name_out,
+            'illumination_spectrum': os.path.join(self._cwd, self._spectrum),
+            'area_factor': '{0:.3e}'.format(1E11 / self._device_length),
+            'folder_path': self._folder_path,
+            'dshunt_name': self._dshuntname
+        }
+
+        # Change the parfile
+
+        parfile = '{0}_t{1:d}.par'.format(os.path.join(output_folder, 'sdevice'), int(time))
+        S0 = self.estimate_srv(cNa=concentration, time=time, use_srv=use_srv)
+        # The directory to save the data to
+        output_folder = self._folder_path
+        # Limit to 5 significant digits
+        s0_val = format(S0, '1.4e')
+
+        # Prepare the conductivity models for the different shunt regions
+        resistivity_template = "Region = \"${shunt_region}\" {\n" \
+                               "    Resistivity {\n" \
+                               "        * Resist(T) = Resist0 * ( 1 + TempCoef * ( T - 273 ) )\n" \
+                               "        Resist0 = ${R0}\n" \
+                               "        TempCoef = 1.0E-5\n" \
+                               "    }\n" \
+                               "}\n\n"
+        src = Template(resistivity_template)
+        shunt_conductivity = ""
+        if dy > 0:
+            for i, s in enumerate(sigma):
+                if s > 0:
+                    r0 = 1.0/s
+                else:
+                    r0 = 1E50
+                    self.log('Found s = 0 at time {0:1.3f} hr'.format(time/3600), level='WARNING')
+                substitutions = {'shunt_region': 'shunt.Region.{0:d}'.format(i), 'R0': '{0:1.4E}'.format(r0)}
+                shunt_conductivity += src.safe_substitute(substitutions)
+
+        substitutions = {
+            'S0_val': s0_val,
+            'shunt_conductivity': shunt_conductivity
+        }
+        # Load the template file
+        template_file_par_file = open(os.path.join(self._cwd, self._parfile_template), 'r')
+        src = Template(template_file_par_file.read())
+        # perform the substitutions
+        result = src.substitute(substitutions)
+        template_file_par_file.close()
+        # Save the sde file
+        with open(parfile, 'w') as output_file:
+            output_file.write(result)
+
+        self.log('Created parfile \'{0}\' with SRV value S0_val: {1} and shunt resistivities'.format(parfile, s0_val))
+
+        # Load the template file
+        template_file_sdevice = open(os.path.join(self._cwd, self._sdevice_template), 'r')
+        src = Template(template_file_sdevice.read())
+        # perform the substitutions
+        result = src.substitute(substitutions_sdevice)
+        template_file_sdevice.close()
+        output_filename_sdevice = 'sdevice_des_t{0}.cmd'.format(int(time))
+        output_filename_sdevice = os.path.join(self._folder_path, output_filename_sdevice)
+        # Save the sde file
+        with open(output_filename_sdevice, 'w') as output_file:
+            output_file.write(result)
+
+        self.log('Created Sentaurus input file \'{0}\'.'.format(output_filename_sdevice))
+
+        return [output_filename_sde, output_filename_sdevice]
+
+    def estimate_srv(self, cNa: Union[np.ndarray, List[float]], time: Union[int, float],
+                     use_srv: bool) -> float:
         """
         Function giving the parameterization of surface recombination velocity as a function of the surface Na
         concentration
@@ -405,7 +688,7 @@ class PIDModel:
 
             # Parameterization of the surface recombination velocity
             S0 = S1 * (cNa[0] / N1) ** gamma1 + S2 * (
-                        cNa[0] / N2) ** gamma2  # Altermatt et al, Journal of App Phys 92, 3187, 2002
+                    cNa[0] / N2) ** gamma2  # Altermatt et al, Journal of App Phys 92, 3187, 2002
 
             # Limit S0 to the thermal velocity of electrons
 
@@ -419,6 +702,31 @@ class PIDModel:
 
             if S0 > vth:  # cm/s
                 S0 = vth  # cm/s
+
+        return S0
+
+    def srv_param(self, cNa: Union[np.ndarray, List[float]], time: Union[int, float],
+                  use_srv: bool) -> str:
+        """
+        Function giving the parameterization of surface recombination velocity as a function of the surface Na
+        concentration
+
+        Parameters
+        ----------
+        cNa: List[float]
+            List containing Na concentration as a function of depth (cm-3)
+        time: Union[int, float]
+            Temperature (C) (int or float)
+        use_srv: bool
+            if  False, S0 is set to zero
+
+        Returns
+        -------
+        str
+            The path to the generated sdevice_tX.par
+        """
+
+        S0 = self.estimate_srv(cNa=cNa, time=time, use_srv=use_srv)
 
         # The directory to save the data to
         output_folder = self._folder_path
@@ -487,13 +795,11 @@ class PIDModel:
             file_name = 'n_t{0:d}_light_des.plt'.format(int(t))
             output_file = 'n_t{0:d}_light_des.tdr'.format(int(t))
             subprocess.run(['tdx', '-d', os.path.abspath(os.path.join(data_folder, file_name)),
-                                os.path.join(output_folder, output_file)])
+                            os.path.join(output_folder, output_file)])
             file_index[i] = (t, output_file, self._simulation_indices[i])
 
         df = pd.DataFrame(data=file_index)
         df.to_csv(path_or_buf=os.path.join(output_folder, file_index_csv), index=False)
-
-
 
     @staticmethod
     def tdr_list_plt_datasets(h5file: str) -> dict:
@@ -515,13 +821,14 @@ class PIDModel:
 
     def run_sde(self, input_file: str) -> bool:
         try:
-            r = os.system('sde -e -l {0}'.format(input_file))  #subprocess.run(['sde', '-e', '-l', input_file], shell=True)
+            r = os.system(
+                'sde -e -l {0}'.format(input_file))  # subprocess.run(['sde', '-e', '-l', input_file], shell=True)
             # if r.returncode != 0:
             #     self.log('Error running sde.')
             #     return False
-            if self.check_errfile():
-                self.log('Error running sde.')
-                return False
+            # if self.check_errfile():
+            #     self.log('Error running sde.')
+            #     return False
 
         except FileNotFoundError as e:
             self.log(e.strerror)
