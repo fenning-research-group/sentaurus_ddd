@@ -32,19 +32,6 @@
 ;(define dopingmodel "uniform")
 (define dopingmodel "gauss")
 
-; *** DEFINITIONS ***
-
-; Initialize error file errfile.txt to no error (0)
-(call-with-output-file "errfile.txt"
-	(lambda (file)
-		(write 0 file)))
-
-; Position of shunt1
-(define shunt1_pos_x1 (- (/ cellWidth 2) (/ shuntw 2))) ; left limit on the x-axis
-(define shunt1_pos_x2 (+ (/ cellWidth 2) (/ shuntw 2)) ) ; right limit on the x-axis
-
-(display shunt1_pos_x1)
-
 ; DOPING PARAMETERS
 (define em_doping 1e19) ; Uniform doping value or surface dopant concentration, depending on doping model
 (define base_doping 1e16) ; Silicon wafer base doping
@@ -128,36 +115,6 @@
   )
 ) ; end of cond
 
-; *** SHUNTS ***
-; create shunts, ie conductive regions through the PN junction with recombination centers at the interface with silicon
-; Later will need to place shunts with a do-loop across the width of the PN junction
-; position of the shunt contactWidth+(cellWidth-contactWidth)/2
-
-(display ${dshunt_name})
-(display "\n")
-
-; Define the shunts
-(if (> ${dshunt_name} 0)
-	(begin
-		(for-each
-			(lambda (SHUNTY INDEX)
-				(begin
-					(define REGION (string-append "shunt.Region." (number->string INDEX) ))
-					(sdegeo:create-rectangle
-						(position shunt1_pos_x1 SHUNTY 0)
-						(position shunt1_pos_x2 (+ SHUNTY shuntDY) 0)
-						shuntmat
-						REGION
-					) ; end of sdegeo:create-rectangle
-					(display "Created region ")
-					(display REGION)
-					(newline)
-				) ; end of begin
-			) ; end of lambda
-			shuntBoxStart shuntBoxNumber
-		) ; end of for-each
-	) ; end of begin
-) ; end of if
 
 (sdedr:define-gaussian-profile "Gauss.AlBSF"
 	"AluminumActiveConcentration"
@@ -203,8 +160,6 @@
 
 ; *** MESH ***
 ; * WHOLE DOMAIN
-
-
 (sdedr:define-refeval-window "domain-ref" "Rectangle" (position 0 (- tSiNx) 0) (position cellWidth THICKNESS 0))
 (sdedr:define-refinement-size "domain-ref-size" xmax ymax xmin ymin)
 (sdedr:define-refinement-placement "domain-ref-pl" "domain-ref-size" "domain-ref")
@@ -251,23 +206,7 @@
 (sdedr:define-refinement-size "junction-ref-size" (/ xmax 20) (/ ymax 20) (/ xmin 50) (/ ymin 50))
 (sdedr:define-refinement-placement "junction-ref-pl" "junction-ref-size" "junction-ref")
 
-;*********************** NOTE: add cond statement to define mesh refinement depending on the type of emitter
-; Mesh refinement at the shunt
-;(sdedr:define-refeval-window "shunt1_refine_window" "Rectangle" (position (- shunt1_pos_x1 0.05) 0 0) (position (+ shunt1_pos_x2 0.05) (+ ${dshunt_name} 0.05) 0) ) ; mesh refinement window slightly larger than the shunt region
-(if (> ${dshunt_name} 0)
-	(begin
-		(sdedr:define-refeval-window "RefWin.Shunt1" "Rectangle" (position (- shunt1_pos_x1 1) 0 0) (position (+ shunt1_pos_x2 1) (+ ${dshunt_name} 1) 0) ) ; mesh refinement window slightly larger than the shunt region
-		;(sdedr:define-refinement-size "RefDef.Shunt1" (/ xmax 20) (/ ymax 20) (/ xmin 20) (/ ymin 20))
-		(sdedr:define-refinement-size "RefDef.Shunt1" (/ ${dshunt_name} 5) (/ ${dshunt_name} 5) (/ ${dshunt_name} 20) (/ ${dshunt_name} 20))
-		(sdedr:define-refinement-placement "PlaceRF.Shunt1" "RefDef.Shunt1" "RefWin.Shunt1")
-	)
-)
 
-
-; SiNx refinement and SiNx/silicon refinement for interference calculation
-;(sdedr:define-refeval-window "SiNx-Si-ref" "Rectangle" (position 0 (- tSiNx) 0) (position cellWidth 0.050 0))
-;(sdedr:define-refinement-size "SiNx-Si-ref-size" (/ xmax 500) (/ ymax 500) (/ xmin 10) (/ ymin 10))
-;(sdedr:define-refinement-placement "SiNx-Si-ref-ref-pl" "SiNx-Si-ref-size" "SiNx-Si-ref-ref")
 
 (display "  front contact refinement") (newline)
 (sdedr:define-refinement-window "RefWin.FrontContact1" "Rectangle"

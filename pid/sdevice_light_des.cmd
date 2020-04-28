@@ -32,12 +32,12 @@ Physics {
 	Mobility ( DopingDependence )
 	Recombination (
 	    SRH(DopingDependence)
-	    Auger(WithGeneration)
-	    Radiative
+	    * Auger(WithGeneration)
+	    * Radiative
 	)
 
 	* Define area of the contacts (in um)
-	AreaFactor= ${area_factor}
+	AreaFactor=  ${area_factor}
 
 	* Use the optical generation file imported and added to the mesh in the Sentaurus structure Editor file
 	*Optics(
@@ -64,7 +64,7 @@ Physics {
 
 * Include surface recombination at the silicon/SiNx interface
 * SRH recombination parameters will be defined separately below
-Physics (RegionInterface="SiNx-region/Si-profile-region") { Recombination(surfaceSRH) }
+* Physics (MaterialInterface = "Si3N4/Silicon") { Recombination(surfaceSRH) }
 
 
 
@@ -108,6 +108,7 @@ Plot {
 }
 
 Math {
+    ${cylindrical}
     * use previous two solutions (if any) to extrapolate next
     Extrapolate
     * use full derivatives in Newton method
@@ -158,7 +159,7 @@ Math {
 	ExitOnFailure
 	* for IV, stop voltage ramp after Voc
 	BreakCriteria {
-		Current (Contact= "base_contact" minval= -1e-1)
+		Current (Contact= "em_contact" minval= -1e-1)
 	}
 
     * display simulation time in 'human' units
@@ -179,20 +180,21 @@ Solve {
         InitialTime= 0 FinalTime= 1.2
         InitialStep= 1 MaxStep= 1 MinStep= 1e-5
     ) { Coupled {Poisson Electron Hole} }
-    NewCurrentPrefix= ""
+
+	NewCurrentPrefix= ""
 
 	quasistationary (
 	    InitialStep = 0.01
 	    MaxStep = 0.10 * Max voltage step of 50 mV in the IV curve
 	    MinStep=0.001
-	    Goal {name= "em_contact" voltage = 0.3}
+	    Goal {name= "base_contact" voltage = 0.4}
 	) {coupled {poisson electron hole} }
 	
 	quasistationary (
-	    InitialStep = 0.005
-	    MaxStep = 0.02
+	    InitialStep = 0.01
+	    MaxStep = 0.025
 	    MinStep=0.00001
-	    Goal {name= "em_contact" voltage = 0.8}
+	    Goal {name= "base_contact" voltage = 0.8}
 	    *plot { range=(0, 1) intervals=2 }
 	) {coupled {poisson electron hole} }
 

@@ -19,7 +19,6 @@ from typing import List
 from scipy import interpolate
 import matplotlib.gridspec as gridspec
 
-
 jv_dtype = np.dtype([('voltage (V)', 'd'), ('current (mA/cm2)', 'd')])
 nu_t_dtype = np.dtype([
     ('time (s)', 'd'),
@@ -46,12 +45,13 @@ defaultPlotStyle = {'font.size': 12,
                     'xtick.minor.width': 1.0,
                     'ytick.minor.size': 2.75,
                     'ytick.minor.width': 1.0,
+                    'xtick.top': False,
                     'ytick.right': False,
                     'lines.linewidth': 2.5,
                     'lines.markersize': 10,
                     'lines.markeredgewidth': 0.85,
                     'axes.labelpad': 5.0,
-                    'axes.labelsize': 12,
+                    'axes.labelsize': 14,
                     'axes.labelweight': 'regular',
                     'legend.handletextpad': 0.2,
                     'legend.borderaxespad': 0.2,
@@ -86,20 +86,21 @@ class Analysis:
         """
         full_file = os.path.join(self._folder_path, h5_filename)
         # main_group = 'collection/geometry_0/state_0'
-        voltage_dataset_name = 'em_contact OuterVoltage'
-        current_dataset_name = 'base_contact TotalCurrent'
+        voltage_dataset_name = 'base_contact OuterVoltage'
+        current_dataset_name = 'em_contact TotalCurrent'
         voltage = self.tdr_get_plt_dataset(h5file=full_file, dataset_name=voltage_dataset_name)
         current = self.tdr_get_plt_dataset(h5file=full_file, dataset_name=current_dataset_name)
 
         # voltage = np.array(voltage_dataset['values'])
         # current = np.array(current_dataset['values'])
 
-        voltage = voltage[current >= 0]
-        current = current[current >= 0]
+        # voltage = voltage[current >= 0]
+        # current = current[current >= 0]
 
         jv = np.array(
             [(v, j) for v, j in zip(voltage, current)], dtype=jv_dtype
         )
+
         return jv
 
     def batch_efficiency(self, csv_index: str) -> pd.DataFrame:
@@ -116,7 +117,7 @@ class Analysis:
 
         """
         df = pd.read_csv(filepath_or_buffer=os.path.join(self._folder_path, 'jv_plots', csv_index))
-        folder_path = os.path.dirname(csv_index)
+        # folder_path = os.path.dirname(csv_index)
         results_path = os.path.join(self._folder_path, 'jv_plots', 'efficiency_results.csv')
         results = np.empty(len(df), dtype=nu_t_dtype)
         for i, row in df.iterrows():
@@ -128,6 +129,7 @@ class Analysis:
                 nu_data['efficiency']
             )
 
+        results = results[~np.isnan(results['efficiency'])]
         df_results = pd.DataFrame(data=results)
         df_results.to_csv(path_or_buf=results_path, index=False)
         return df_results
@@ -151,10 +153,18 @@ class Analysis:
         """
 
         efficiency_data = self.batch_efficiency(csv_index=csv_index)
+        # How many points
+        n_total = len(efficiency_data)
+        # count the number of values of efficiency data greater than 1E-1
+        idx_bnd = len(efficiency_data[efficiency_data['efficiency'] * 100 > 0.1])
+        idx_bnd = idx_bnd + 5 if n_total > idx_bnd + 5 else idx_bnd
+        idx_msk = np.array([True if i < idx_bnd else False for i in range(n_total)])
+        efficiency_data = efficiency_data[idx_msk]
+
         time_s = efficiency_data['time (s)']
-        time_h = time_s/3600
+        time_h = time_s / 3600
         df = pd.read_csv(filepath_or_buffer=os.path.join(self._folder_path, 'jv_plots', csv_index))
-        results_path = os.path.dirname(csv_index)
+        # results_path = os.path.dirname(csv_index)
 
         mpl.rcParams.update(defaultPlotStyle)
 
@@ -176,7 +186,7 @@ class Analysis:
         plt.ioff()
         fig = plt.figure()
         fig.set_size_inches(6.5, 6.0, forward=True)
-        fig.subplots_adjust(hspace=0.35, wspace=0.5)
+        fig.subplots_adjust(hspace=0.35, wspace=0.35)
         gs0 = gridspec.GridSpec(ncols=1, nrows=2, figure=fig, width_ratios=[1])
         gs00 = gridspec.GridSpecFromSubplotSpec(nrows=1, ncols=2,
                                                 subplot_spec=gs0[0])
@@ -191,22 +201,30 @@ class Analysis:
             group_si = hf['L2']
             profiles = group_si['concentration']
             for i, row in df.iterrows():
-                ct_ds = 'ct_{0:d}'.format(row['index'])
-                t = float(row['time (s)'])/3600
-                c = np.array(profiles[ct_ds])
-                jv = self.read_jv(h5_filename=os.path.join(self._folder_path, 'jv_plots', row['filename']))
-                ax1.plot(jv['voltage (V)'], jv['current (mA/cm2)'], '-', color=cmap(normalize(t)))
-                ax3.plot(x, c, color=jv_colors[i])
+                if i < idx_bnd:
+                    ct_ds = 'ct_{0:d}'.format(row['index'])
+                    t = float(row['time (s)']) / 3600
+                    c = np.array(profiles[ct_ds])
+                    jv = self.read_jv(h5_filename=os.path.join(self._folder_path, 'jv_plots', row['filename']))
+                    jv = jv[jv['current (mA/cm2)'] >= 0]
+                    ax1.plot(jv['voltage (V)'], jv['current (mA/cm2)'], '-', color=cmap(normalize(t)))
+                    ax3.plot(x, c, color=jv_colors[i])
 
         # interpoate the efficiency
-        f = interpolate.interp1d(time_h, efficiency_data['efficiency'], kind='slinear', fill_value="extrapolate")
-        t_interp = np.linspace(np.amin(time_h), np.amax(time_h), num=500)
-        nu_interp = f(t_interp)
-        ax2.plot(time_h, efficiency_data['efficiency']*100, marker='o', ls='none', fillstyle='none', color='C0',
-                 label='Simulation')
-        ax2.plot(t_interp, nu_interp*100, ':', color='k', dashes=(5, 6), label='Guide to\nthe eye', lw=1.5)
+        interpolation = interpolate.splrep(time_h, efficiency_data['efficiency'], k=3)
 
-        divider = make_axes_locatable(ax1)
+        # f = interpolate.interp1d(time_h, efficiency_data['efficiency'], kind='slinear', fill_value="extrapolate")
+        t_interp = np.linspace(np.amin(time_h), np.amax(time_h), num=1000)
+        # nu_interp = f(t_interp)
+        nu_interp = interpolate.splev(t_interp, interpolation)
+        ax2.plot(time_h, efficiency_data['efficiency'] * 100, marker='o', ls='none', fillstyle='none', color='C0',
+                 label='Simulation')
+        ax2.plot(t_interp, nu_interp * 100, ':', color='k', dashes=(3, 1), label='Guide to the eye', lw=1.5)
+
+        ax3.axvline(x=0.6, ls='--', color='k', lw=1.5)
+
+
+        divider = make_axes_locatable(ax3)
         cax = divider.append_axes("right", size="7.5%", pad=0.03)
         cbar = fig.colorbar(scalar_maps, cax=cax)
         cbar.set_label('Time (h)', rotation=90)
@@ -221,26 +239,40 @@ class Analysis:
         ax3.set_ylabel('[Na] (cm$^{-3}$)')
         ax3.set_yscale('log')
 
-        ax2.legend(loc='lower left', frameon=False)
+        ax2.legend(loc='upper right', frameon=True)
+        # ax2.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc='lower left',
+        #            ncol=2, mode="expand", borderaxespad=0.)
 
         ax1.xaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
         ax1.xaxis.set_minor_locator(mticker.AutoMinorLocator(4))
         ax1.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
         ax1.yaxis.set_minor_locator(mticker.AutoMinorLocator(4))
 
-        ax2.set_ylim(0, np.amax(nu_interp*1.25)*100)
+        ax2.set_ylim(top=30)
 
         ax2.xaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
         ax2.xaxis.set_minor_locator(mticker.AutoMinorLocator(4))
         ax2.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
         ax2.yaxis.set_minor_locator(mticker.AutoMinorLocator(4))
 
-        locmaj = mpl.ticker.LogLocator(base=10.0, numticks=5, subs=(1.0, ))
+        locmaj = mpl.ticker.LogLocator(base=10.0, numticks=5, subs=(1.0,))
         locmin = mpl.ticker.LogLocator(base=10.0, numticks=50, subs=np.arange(2, 10) * .1)
 
         ax3.set_ylim(bottom=1E12)
+        ax3.set_xlim(left=0, right=np.amax(x))
         ax3.yaxis.set_major_locator(locmaj)
         ax3.yaxis.set_minor_locator(locmin)
+
+        ax3_ylim = ax3.get_ylim()
+
+        ax3.text(0.59, ax3_ylim[1],
+                 'Emitter position ',
+                 horizontalalignment='right',
+                 verticalalignment='top',
+                 rotation=90,
+                 fontsize=12,
+                 fontweight='regular',
+                 color='k')
 
         plt.tight_layout()
         fig.savefig(os.path.join(self._folder_path, 'jv_plots', 'efficiency_t.png'), dpi=600)
@@ -265,9 +297,16 @@ class Analysis:
             A dictionary containing the efficiency parameters
         """
         # Estimate the power density
-        f = interpolate.interp1d(voltage, current, kind='slinear', fill_value="extrapolate")
-        voltage_interp = np.linspace(np.amin(voltage), np.amax(voltage), num=200)
-        current_interp = f(voltage_interp)
+        if len(voltage) > 3:
+            f = interpolate.interp1d(voltage, current, kind='slinear', fill_value="extrapolate")
+            voltage_interp = np.linspace(np.amin(voltage), np.amax(voltage), num=200)
+            current_interp = f(voltage_interp)
+        elif len(voltage) > 1:
+            voltage_interp = voltage
+            current_interp = current
+        else:
+            voltage_interp = np.zeros(1)
+            current_interp = np.zeros(1)
         power_density = voltage_interp * current_interp
         # Find max powerpoint
         pd_mpp = np.amax(power_density)

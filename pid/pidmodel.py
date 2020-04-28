@@ -30,7 +30,11 @@ class PIDModel:
                             'WARNING': logging.WARNING,
                             'ERROR': logging.ERROR,
                             'CRITICAL': logging.CRITICAL}
-    _sde_template: str = 'metallic_shunt_sde_dvs.scm'
+    _sde_template_3d: str = 'metallic_shunt_sde_dvs_3D.scm'
+    _sde_template_2d: str = 'metallic_shunt_sde_dvs.scm'
+    _sde_template_traps: str = 'shunt_traps_sde_dvs.scm'
+    _sde_template_traps_cylindrical: str = 'shunt_traps_sde_dvs_cylindrical.scm'
+    _sde_template_3_cylindrical: str = 'metallic_shunt_sde_dvs_cylindrical.scm'
     _sdevice_template_dark: str = 'sdevice_dark_des.cmd'
     _sdevice_template_light: str = 'sdevice_light_des.cmd'
     _simulation_time: np.ndarray = np.array([])
@@ -145,8 +149,6 @@ class PIDModel:
         self.log('Simulation starting step: {0}'.format(start_step))
         self.log('Step used to skip sodium profiles in the h5py file: {0}'.format(skip_nb))
         self.log('Simulation ending step: {0}'.format(end_step))
-        self.log('Sentaurus editor template file: {0}'.format(self._sde_template))
-        self.log('Sentaurus device template file: {0}'.format(self._sdevice_template))
 
         # factor=50 # factor = 100 to have a final depth of 600 nm, as in "For_JV_85C.h5" the final depth is 6 nm.
         # NOTE: Later, with the correct Na profiles, it should be just one.
@@ -196,7 +198,9 @@ class PIDModel:
         final_string = "Results in {0}".format(self._folder_path)
         self.log(final_string)
 
-    def run_pid_metal(self, start_step: int = 0, end_step: int = 0, skip_nb: int = 0, overwrite_folder: bool = False):
+    def run_pid_metal(self, start_step: int = 0, end_step: int = 0, skip_nb: int = 0, overwrite_folder: bool = False,
+                      cylindrical: bool = False, activated_na: float = 1.0, fixed_conductivity: float = 0, 
+                      shunt_depth: float = 0):
         """
         Start the sdevice simulation for each C(t) in [startstep:skip_nb:endstep]
 
@@ -214,6 +218,14 @@ class PIDModel:
         overwrite_folder: bool
             If the directory already exists, False will create a new one while True will save in the same one.
             By default changedir=False.
+        cylindrical: bool
+            If true, apply cylindrical symmetry to the structure.
+        activated_na: float
+            The fraction of sodium that is ionized [0 - 1]
+        fixed_conductivity: float
+            If > 0 used a fixed value of the conductivity for the whole shunt (Ohm cm)^{-1}
+        shunt_depth: float
+            If 0, ignore. If > 0 use it as constant shunt depth (um)
 
         Returns
         -------
@@ -249,8 +261,6 @@ class PIDModel:
         self.log('Simulation starting step: {0}'.format(start_step))
         self.log('Step used to skip sodium profiles in the h5py file: {0}'.format(skip_nb))
         self.log('Simulation ending step: {0}'.format(end_step))
-        self.log('Sentaurus editor template file: {0}'.format(self._sde_template))
-        self.log('Sentaurus device template file: {0}'.format(self._sdevice_template))
 
         # factor=50 # factor = 100 to have a final depth of 600 nm, as in "For_JV_85C.h5" the final depth is 6 nm.
         # NOTE: Later, with the correct Na profiles, it should be just one.
@@ -270,7 +280,7 @@ class PIDModel:
                 group_si_c = hf['/L2/concentration']
                 ct = np.array(group_si_c[ct_ds])
             # Estimate the conductivity
-            conductivity = self.conductivity_model(ct[:])
+            # conductivity = self.conductivity_model(ct[:], activated_na=activated_na)
             # # Save conductivity profile in a .plx file
             # conductivity_filename = "conductivity_t{0:.0f}.plx".format(time[i])
             # conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
@@ -287,7 +297,12 @@ class PIDModel:
             # self.log('Created concentration file \'{0}\'.'.format(conductivity_fullname))
             # Update the parfile with the concentration
             # self.srv_param(cNa=ct, time=time[i], use_srv=True)
-            [sde_filename, sdevice_filename] = self.update_files_metal(concentration=ct, x=x, time=time[i])
+            self.log('Processing time t = {0:.0f} s'.format(time[i]))
+            [sde_filename, sdevice_filename] = self.update_files_metal(concentration=ct, x=x, time=time[i],
+                                                                       cylindrical=cylindrical,
+                                                                       activated_na=activated_na,
+                                                                       fixed_conductivity=fixed_conductivity,
+                                                                       shunt_depth=shunt_depth)
             # Run sde
             success: bool = self.run_sde(input_file=sde_filename)
             if not success:
@@ -300,7 +315,7 @@ class PIDModel:
         final_string = "Results in {0}".format(self._folder_path)
         self.log(final_string)
 
-    def conductivity_model(self, concentration: np.ndarray):
+    def conductivity_model(self, concentration: np.ndarray, activated_na: float = 1) -> np.ndarray:
         """
         Implementation of the conductivity_model model.
 
@@ -318,6 +333,8 @@ class PIDModel:
         ----------
         concentration: np.ndarray
             The sodium concentration in the Si bulk
+        activated_na: float
+            The fraction of Na that is activated
 
         Returns
         -------
@@ -326,7 +343,7 @@ class PIDModel:
         """
 
         # Na concentration in the shunt
-        cshunt = concentration * self._segregation_coefficient
+        cshunt = concentration * self._segregation_coefficient * activated_na
 
         # Clathrate model, not used because not realistic at our Na concentrations
         # TODO: consider removing the clathrate model
@@ -385,7 +402,6 @@ class PIDModel:
         mesh_name = "n_t{0:d}".format(int(time))
         # Calculate segregation coefficient at each depth and the depth of the shunt
         cseg = np.abs(concentration) * self._segregation_coefficient
-        L = len(cseg)
         # pdb.set_trace()
         # k = 0
         # # ATTENTION: need to modify this as the Na concentration is not a meaningful value here. The shunt depth is
@@ -434,7 +450,7 @@ class PIDModel:
             'c0': np.amax(concentration * self._segregation_coefficient)
         }
         # Load the template file
-        template_file_sde = open(os.path.join(self._cwd, self._sde_template), 'r')
+        template_file_sde = open(os.path.join(self._cwd, self._sde_template_2d), 'r')
         src = Template(template_file_sde.read())
         # perform the substitutions
         result = src.substitute(substitutions_sde)
@@ -461,10 +477,11 @@ class PIDModel:
             'parfile': parfile,
             'node_out': node_name_out,
             'illumination_spectrum': os.path.join(self._cwd, self._spectrum),
-            'area_factor': '{0:.3e}'.format(1E11 / self._device_length),
+            'area_factor': '{0:.4e}'.format(1E11 / (25 * self._device_length)),  # 2D
             'folder_path': self._folder_path,
             'dshunt_name': self._dshuntname
         }
+        # 'area_factor': '{0:.4e}'.format(1E11 / (self._device_length)), # 2D
         # Load the template file
         template_file_sdevice = open(os.path.join(self._cwd, self._sdevice_template), 'r')
         src = Template(template_file_sdevice.read())
@@ -482,7 +499,12 @@ class PIDModel:
         return [output_filename_sde, output_filename_sdevice]
 
     def update_files_metal(self, concentration: np.ndarray, x: np.ndarray,
-                           time: Union[int, float], use_srv: bool = True) -> List[str]:
+                           time: Union[int, float], use_srv: bool = False,
+                           two_dimensional: bool = True,
+                           cylindrical: float = False,
+                           activated_na: float = 1.0,
+                           fixed_conductivity: float = 0,
+                           shunt_depth: float = 0) -> List[str]:
         """
         This method modifies the Sentaurus input files to include updated shunt depth and modified external files
         (including the .par file). Creates a shunt with spatially varying conductivity_model based on doping profiles
@@ -498,6 +520,16 @@ class PIDModel:
             time from the h5 file (int or float)
         use_srv: bool
             If true updates the parameter file with the estimated SRV
+        two_dimensional: float
+            True if a 2D simulation otherwise 3D
+        cylindrical: bool
+            If true, activate cylindrical symmetry
+        activated_na: float
+            The fraction of sodium that is ionized.
+        fixed_conductivity: float
+            If the value is 0, ignore it. If > 0 use the value as a constant conductivity in the shunt (Ohm cm)^{-1}
+        shunt_depth: float
+            If the value is 0, ignore. If >0 use it as shunt depth (in um)
 
         Returns
         -------
@@ -512,33 +544,53 @@ class PIDModel:
         cseg = np.abs(concentration) * self._segregation_coefficient
 
         # Get the conductivity
-        conductivity = self.conductivity_model(cseg)
-        idx_threshold = conductivity >= 1E-3
-        conductivity = conductivity[idx_threshold]
-        x = x[idx_threshold]
+        if fixed_conductivity == 0 and shunt_depth == 0:
+            conductivity = self.conductivity_model(cseg, activated_na=activated_na)
+            idx_threshold = conductivity >= 1E-3
+            conductivity = conductivity[idx_threshold]
+            x = x[idx_threshold]
 
-        if time == 0 or len(x) == 0:
-            shunt_depth = 0
-        elif len(x) == 1:
-            shunt_depth = x[0]
-        else:
-            shunt_depth = np.amax(x)  # Depth of the profile in um. The depth does not start at 0 so subtract x[0]
+            if time == 0:
+                shunt_depth = 0
+                dy = 0
+                y = np.zeros(1)
+                sigma = y
+            elif len(x) == 1:
+                shunt_depth = x[0]
+                dy = shunt_depth
+                y = np.zeros(1)
+                sigma = y
+            else:
+                shunt_depth = np.amax(x)  # Depth of the profile in um. The depth does not start at 0 so subtract x[0]
 
-        if len(x) > 100:
-            # Interpolate the profile to get only 100 points
-            y = np.linspace(0, shunt_depth, 101)
-            dy = y[1] - y[0]
-            f = interpolate.interp1d(x, conductivity, kind='slinear', fill_value="extrapolate")
-            y = y[0:-1]
-            sigma = f(y)
-        elif len(x) >= 1:
-            y = x[0:-1]
-            dy = y[1] - y[0]
-            sigma = conductivity[0:-1]
+            if len(x) > 100:
+                # Interpolate the profile to get only 100 points
+                y = np.linspace(0, shunt_depth, 101)
+                dy = y[1] - y[0]
+                f = interpolate.interp1d(x, conductivity, kind='slinear', fill_value="extrapolate")
+                y = y[0:-1]
+                sigma = f(y)
+            elif len(x) >= 1:
+                y = x[0:-1]
+                dy = y[1] - y[0]
+                sigma = conductivity[0:-1]
+            else:
+                y = np.zeros(1)
+                dy = 0
+                sigma = y
         else:
-            y = np.zeros(1)
-            dy = 0
-            sigma = y
+            if time == 0:
+                shunt_depth = 0
+                dy = 0
+                y = np.zeros(1)
+                sigma = y
+            else:
+                shunt_depth = abs(shunt_depth)
+                fixed_conductivity = abs(fixed_conductivity)
+                y = np.array([0])
+                dy = shunt_depth
+                sigma = fixed_conductivity * np.ones_like(y)
+
         box_indices = ' '.join(['%d' % i for i in range(len(y))])
 
         # *************** Generate the sde file based on the template *******************
@@ -559,7 +611,19 @@ class PIDModel:
             'shunt_dy': dy
         }
         # Load the template file
-        template_file_sde = open(os.path.join(self._cwd, self._sde_template), 'r')
+        symmetry: str = '* No symmetry'
+        if two_dimensional:
+            template_file_sde = open(os.path.join(self._cwd, self._sde_template_2d), 'r')
+            area_factor = 1E11 / self._device_length
+        else:
+            template_file_sde = open(os.path.join(self._cwd, self._sde_template_3d), 'r')
+            area_factor = 1E11 / (25 * self._device_length)
+
+        if cylindrical:
+            template_file_sde = open(os.path.join(self._cwd, self._sde_template_3_cylindrical), 'r')
+            area_factor = 1E11 / (np.pi * (self._device_length / 2)**2)
+            symmetry: str = 'Cylindrical'
+
         src = Template(template_file_sde.read())
         # perform the substitutions
         result = src.substitute(substitutions_sde)
@@ -581,14 +645,16 @@ class PIDModel:
             out_mode = 'dark'
         node_name_out = '{0}_{1}_des'.format(os.path.join(output_folder, mesh_name), out_mode)
         parfile = '{0}_t{1}.par'.format(os.path.join(output_folder, 'sdevice'), int(time))
+
         substitutions_sdevice = {
             'nodenum': node_name_msh,
             'parfile': parfile,
             'node_out': node_name_out,
             'illumination_spectrum': os.path.join(self._cwd, self._spectrum),
-            'area_factor': '{0:.3e}'.format(1E11 / self._device_length),
+            'area_factor': '{0:.3e}'.format(area_factor),
             'folder_path': self._folder_path,
-            'dshunt_name': self._dshuntname
+            'dshunt_name': self._dshuntname,
+            'cylindrical': symmetry
         }
 
         # Change the parfile
@@ -613,10 +679,230 @@ class PIDModel:
         if dy > 0:
             for i, s in enumerate(sigma):
                 if s > 0:
-                    r0 = 1.0/s
+                    r0 = 1.0 / s
                 else:
                     r0 = 1E50
-                    self.log('Found s = 0 at time {0:1.3f} hr'.format(time/3600), level='WARNING')
+                    self.log('Found s = 0 at time {0:1.3f} hr'.format(time / 3600), level='WARNING')
+                substitutions = {'shunt_region': 'shunt.Region.{0:d}'.format(i), 'R0': '{0:1.4E}'.format(r0)}
+                shunt_conductivity += src.safe_substitute(substitutions)
+
+        substitutions = {
+            'S0_val': s0_val,
+            'shunt_conductivity': shunt_conductivity
+        }
+        # Load the template file
+        template_file_par_file = open(os.path.join(self._cwd, self._parfile_template), 'r')
+        src = Template(template_file_par_file.read())
+        # perform the substitutions
+        result = src.substitute(substitutions)
+        template_file_par_file.close()
+        # Save the sde file
+        with open(parfile, 'w') as output_file:
+            output_file.write(result)
+
+        self.log('Created parfile \'{0}\' with SRV value S0_val: {1} and shunt resistivities'.format(parfile, s0_val))
+
+        # Load the template file
+        template_file_sdevice = open(os.path.join(self._cwd, self._sdevice_template), 'r')
+        src = Template(template_file_sdevice.read())
+        # perform the substitutions
+        result = src.substitute(substitutions_sdevice)
+        template_file_sdevice.close()
+        output_filename_sdevice = 'sdevice_des_t{0}.cmd'.format(int(time))
+        output_filename_sdevice = os.path.join(self._folder_path, output_filename_sdevice)
+        # Save the sde file
+        with open(output_filename_sdevice, 'w') as output_file:
+            output_file.write(result)
+
+        self.log('Created Sentaurus input file \'{0}\'.'.format(output_filename_sdevice))
+
+        return [output_filename_sde, output_filename_sdevice]
+
+    def update_files_traps(self, concentration: np.ndarray, x: np.ndarray,
+                           time: Union[int, float], use_srv: bool = False,
+                           two_dimensional: bool = True,
+                           cylindrical: float = False,
+                           activated_na: float = 1.0,
+                           fixed_conductivity: float = 0,
+                           shunt_depth: float = 0) -> List[str]:
+        """
+        This method modifies the Sentaurus input files to include updated shunt depth and modified external files
+        (including the .par file). Creates a shunt with spatially varying conductivity_model based on doping profiles
+        calculated at each time.
+
+        Parameters
+        ----------
+        concentration: np.ndarray
+            Sodium concentration from the h5 file
+        x: np.ndarray
+            depth from the h5 file (list)
+        time: Union[int, float]
+            time from the h5 file (int or float)
+        use_srv: bool
+            If true updates the parameter file with the estimated SRV
+        two_dimensional: float
+            True if a 2D simulation otherwise 3D
+        cylindrical: bool
+            If True, activate cylindrical geometry
+        activated_na: float
+            The fraction of sodium that is ionized.
+        fixed_conductivity: float
+            If the value is 0, ignore it. If > 0 use the value as a constant conductivity in the shunt (Ohm cm)^{-1}
+        shunt_depth: float
+            If the value is 0, ignore. If >0 use it as shunt depth (in um)
+
+        Returns
+        -------
+        List[str]
+            [sde_file_path, sdevice_file_path]
+        """
+        # The directory to save the data to
+        output_folder = self._folder_path
+        # name for the mesh file
+        mesh_name = "n_t{0:d}".format(int(time))
+        # Calculate segregation coefficient at each depth and the depth of the shunt
+        cseg = np.abs(concentration) * self._segregation_coefficient
+
+        # Get the conductivity
+        if fixed_conductivity == 0 and shunt_depth == 0:
+            conductivity = self.conductivity_model(cseg, activated_na=activated_na)
+            idx_threshold = conductivity >= 1E-3
+            conductivity = conductivity[idx_threshold]
+            x = x[idx_threshold]
+
+            if time == 0:
+                shunt_depth = 0
+                dy = 0
+                y = np.zeros(1)
+                sigma = y
+            elif len(x) == 1:
+                shunt_depth = x[0]
+                dy = shunt_depth
+                y = np.zeros(1)
+                sigma = y
+            else:
+                shunt_depth = np.amax(x)  # Depth of the profile in um. The depth does not start at 0 so subtract x[0]
+
+            if len(x) > 100:
+                # Interpolate the profile to get only 100 points
+                y = np.linspace(0, shunt_depth, 101)
+                dy = y[1] - y[0]
+                f = interpolate.interp1d(x, conductivity, kind='slinear', fill_value="extrapolate")
+                y = y[0:-1]
+                sigma = f(y)
+            elif len(x) >= 1:
+                y = x[0:-1]
+                dy = y[1] - y[0]
+                sigma = conductivity[0:-1]
+            else:
+                y = np.zeros(1)
+                dy = 0
+                sigma = y
+        else:
+            if time == 0:
+                shunt_depth = 0
+                dy = 0
+                y = np.zeros(1)
+                sigma = y
+            else:
+                shunt_depth = abs(shunt_depth)
+                fixed_conductivity = abs(fixed_conductivity)
+                y = np.array([0])
+                dy = shunt_depth
+                sigma = fixed_conductivity * np.ones_like(y)
+
+        box_indices = ' '.join(['%d' % i for i in range(len(y))])
+
+        # *************** Generate the sde file based on the template *******************
+        # Prepare the substitutions
+        conductivity_filename = "na_profile_t{0:.0f}.plx".format(time)
+        conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
+        mesh_node_file = os.path.join(self._folder_path, mesh_name)
+        substitutions_sde = {
+            'dshunt_name': self._dshuntname,
+            'shunt_depth': shunt_depth,
+            'optical_generation_file': self._optical_generation_file,
+            'nodenum': mesh_node_file,
+            'contact_length': self._contact_length,
+            'device_length': self._device_length,
+            'shunt_positions': ' '.join(map(str, y)),
+            'shunt_sigmas': ' '.join(map(str, sigma)),
+            'shunt_index': box_indices,
+            'shunt_dy': dy
+        }
+        # Load the template file
+        symmetry: str = '* No symmetry'
+        if two_dimensional:
+            template_file_sde = open(os.path.join(self._cwd, self._sde_template_2d), 'r')
+            area_factor = 1E11 / self._device_length
+        else:
+            template_file_sde = open(os.path.join(self._cwd, self._sde_template_3d), 'r')
+            area_factor = 1E11 / (25 * self._device_length)
+
+        if cylindrical:
+            template_file_sde = open(os.path.join(self._cwd, self._sde_template_3_cylindrical), 'r')
+            area_factor = 1E11 / (np.pi * (self._device_length / 2) ** 2)
+            symmetry: str = 'Cylindrical'
+
+        src = Template(template_file_sde.read())
+        # perform the substitutions
+        result = src.substitute(substitutions_sde)
+        template_file_sde.close()
+        output_filename_sde = 'sde_dvs_t{0:d}.cmd'.format(int(time))
+        output_filename_sde = os.path.join(self._folder_path, output_filename_sde)
+        # Save the sde file
+        with open(output_filename_sde, 'w') as output_file:
+            output_file.write(result)
+
+        self.log('Created Sentaurus input file \'{0}\'.'.format(output_filename_sde))
+
+        # *************** Generate the sdevice file based on the template *******************
+        # Prepare the substitutions
+        node_name_msh = '{0}_msh'.format(os.path.join(output_folder, mesh_name))
+        if self._illuminated:
+            out_mode = 'light'
+        else:
+            out_mode = 'dark'
+        node_name_out = '{0}_{1}_des'.format(os.path.join(output_folder, mesh_name), out_mode)
+        parfile = '{0}_t{1}.par'.format(os.path.join(output_folder, 'sdevice'), int(time))
+
+        substitutions_sdevice = {
+            'nodenum': node_name_msh,
+            'parfile': parfile,
+            'node_out': node_name_out,
+            'illumination_spectrum': os.path.join(self._cwd, self._spectrum),
+            'area_factor': '{0:.3e}'.format(area_factor),
+            'folder_path': self._folder_path,
+            'dshunt_name': self._dshuntname,
+            'cylindrical': symmetry
+        }
+
+        # Change the parfile
+
+        parfile = '{0}_t{1:d}.par'.format(os.path.join(output_folder, 'sdevice'), int(time))
+        S0 = self.estimate_srv(cNa=concentration, time=time, use_srv=use_srv)
+        # The directory to save the data to
+        output_folder = self._folder_path
+        # Limit to 5 significant digits
+        s0_val = format(S0, '1.4e')
+
+        # Prepare the conductivity models for the different shunt regions
+        resistivity_template = "Region = \"${shunt_region}\" {\n" \
+                               "    Resistivity {\n" \
+                               "        * Resist(T) = Resist0 * ( 1 + TempCoef * ( T - 273 ) )\n" \
+                               "        Resist0 = ${R0}\n" \
+                               "        TempCoef = 1.0E-5\n" \
+                               "    }\n" \
+                               "}\n\n"
+        src = Template(resistivity_template)
+        shunt_conductivity = ""
+        if dy > 0:
+            for i, s in enumerate(sigma):
+                if s > 0:
+                    r0 = 1.0 / s
+                else:
+                    r0 = 1E50
+                    self.log('Found s = 0 at time {0:1.3f} hr'.format(time / 3600), level='WARNING')
                 substitutions = {'shunt_region': 'shunt.Region.{0:d}'.format(i), 'R0': '{0:1.4E}'.format(r0)}
                 shunt_conductivity += src.safe_substitute(substitutions)
 

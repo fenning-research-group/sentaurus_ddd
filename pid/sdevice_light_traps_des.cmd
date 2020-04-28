@@ -61,7 +61,7 @@ Physics {
 	)
 } * End of main Physics section
 
-Physics (Region= "Region.Shunt1") {
+Physics (Material= "Region.Shunt1") {
     Traps(
         (Donor    fromValBand Gaussian EnergyMid=0.088 EnergySig=0.1 Conc=1 SFactor="DeepLevels" eXsection=2.0E-15 hXsection=2.0E-15)
         (Acceptor fromValBand Gaussian EnergyMid=0.139 EnergySig=0.1 Conc=1 SFactor="DeepLevels" eXsection=4.3E-15 hXsection=4.3E-15)
