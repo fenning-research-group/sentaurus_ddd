@@ -29,6 +29,7 @@ Electrode {
 
 * Start Physics section
 Physics {
+    Fermi
 	Mobility ( DopingDependence )
 	Recombination (
 	    SRH(DopingDependence)
@@ -64,7 +65,7 @@ Physics {
 
 * Include surface recombination at the silicon/SiNx interface
 * SRH recombination parameters will be defined separately below
-* Physics (MaterialInterface = "Si3N4/Silicon") { Recombination(surfaceSRH) }
+Physics (MaterialInterface = "Si3N4/Silicon") { Recombination(surfaceSRH) }
 
 
 
@@ -187,7 +188,7 @@ Solve {
 	    InitialStep = 0.01
 	    MaxStep = 0.10 * Max voltage step of 50 mV in the IV curve
 	    MinStep=0.001
-	    Goal {name= "base_contact" voltage = 0.4}
+	    Goal {name= "base_contact" voltage = 0.0}
 	) {coupled {poisson electron hole} }
 	
 	quasistationary (
@@ -195,7 +196,7 @@ Solve {
 	    MaxStep = 0.025
 	    MinStep=0.00001
 	    Goal {name= "base_contact" voltage = 0.8}
-	    *plot { range=(0, 1) intervals=2 }
+	    Plot { range=(0, 1) intervals=2 }
 	) {coupled {poisson electron hole} }
 
 	System("rm -f ${folder_path}/tmp_*")

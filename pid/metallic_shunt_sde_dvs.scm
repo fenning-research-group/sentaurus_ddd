@@ -203,8 +203,6 @@
 
 ; *** MESH ***
 ; * WHOLE DOMAIN
-
-
 (sdedr:define-refeval-window "domain-ref" "Rectangle" (position 0 (- tSiNx) 0) (position cellWidth THICKNESS 0))
 (sdedr:define-refinement-size "domain-ref-size" xmax ymax xmin ymin)
 (sdedr:define-refinement-placement "domain-ref-pl" "domain-ref-size" "domain-ref")
@@ -215,8 +213,8 @@
 	(position cellWidth THICKNESS 0)
 )
 (sdedr:define-refinement-size "RefDef.All"
-	(/ xmax 20) (/ ymax 20)
-	(/ xmin 25) (/ ymin 25)
+	(/ xmax 5) (/ ymax 5)
+	(/ xmin 10) (/ ymin 10)
 )
 (sdedr:define-refinement-function "RefDef.All"
 	"DopingConcentration"
@@ -280,7 +278,7 @@
 )
 
 (sdedr:define-refinement-size "RefDef.FrontContact"
-	(/ contactWidth 10) (/ THICKNESS 10)
+	(/ contactWidth 5) (/ THICKNESS 5)
 	(/ contactWidth 20) (/ THICKNESS 50)
 )
 

@@ -21,6 +21,7 @@ class PIDModel:
     This class provides methods to run the electrical module of the DDD model
     """
     _NaProfileFileName: str = None
+    _batch_band_diagram_template: str = 'batch_band_diagram.tcl'
     _cSi: float = 5e22
     _dshuntname: str = "dshunt1"
     _logger: logging.Logger = None
@@ -200,7 +201,10 @@ class PIDModel:
 
     def run_pid_metal(self, start_step: int = 0, end_step: int = 0, skip_nb: int = 0, overwrite_folder: bool = False,
                       cylindrical: bool = False, activated_na: float = 1.0, fixed_conductivity: float = 0, 
-                      shunt_depth: float = 0):
+                      shunt_depth: float = 0, metal_work_function: float = 4.05,
+                      uniform_profile: bool = False,
+                      band_diagram_xcut: float = 25.0,
+                      use_srv: bool = False):
         """
         Start the sdevice simulation for each C(t) in [startstep:skip_nb:endstep]
 
@@ -226,6 +230,14 @@ class PIDModel:
             If > 0 used a fixed value of the conductivity for the whole shunt (Ohm cm)^{-1}
         shunt_depth: float
             If 0, ignore. If > 0 use it as constant shunt depth (um)
+        metal_work_function: float
+            The work function of the metal shunt (default 4.05 eV)
+        uniform_profile: bool
+            True if using a uniform coductivity in the shunt based on the concentration
+        band_diagram_xcut: float
+            The x value at which the band diagram will be taken.
+        use_srv: bool
+            True if estimating SRV
 
         Returns
         -------
@@ -280,35 +292,54 @@ class PIDModel:
                 group_si_c = hf['/L2/concentration']
                 ct = np.array(group_si_c[ct_ds])
             # Estimate the conductivity
-            # conductivity = self.conductivity_model(ct[:], activated_na=activated_na)
-            # # Save conductivity profile in a .plx file
-            # conductivity_filename = "conductivity_t{0:.0f}.plx".format(time[i])
-            # conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
-            # with open(conductivity_fullname, 'w') as fp:
-            #     fp.write("\"MetalConductivity\"\n")
-            #     line = "75E-3\t0\n"
-            #     line += "50E-3\t0\n"
-            #     line += "25E-3\t0\n"
-            #     line += "1E-4\t0\n"
-            #     fp.write(line)
-            #     for xi, c in zip(x, conductivity):
-            #         line = "{0:1.4E}\t{1:1.4E}\n".format(xi, c)
-            #         fp.write(line)
-            # self.log('Created concentration file \'{0}\'.'.format(conductivity_fullname))
-            # Update the parfile with the concentration
-            # self.srv_param(cNa=ct, time=time[i], use_srv=True)
-            self.log('Processing time t = {0:.0f} s'.format(time[i]))
-            [sde_filename, sdevice_filename] = self.update_files_metal(concentration=ct, x=x, time=time[i],
-                                                                       cylindrical=cylindrical,
-                                                                       activated_na=activated_na,
-                                                                       fixed_conductivity=fixed_conductivity,
-                                                                       shunt_depth=shunt_depth)
+            conductivity = self.conductivity_model(ct[:], activated_na=activated_na)
+            if uniform_profile:
+                idx = (np.abs(conductivity - conductivity[0]/100)).argmin()
+                conductivity = conductivity[idx]
+                [sde_filename, sdevice_filename] = self.update_files_metal(concentration=ct, x=x, time=time[i],
+                                                                           cylindrical=cylindrical,
+                                                                           activated_na=activated_na,
+                                                                           fixed_conductivity=conductivity,
+                                                                           shunt_depth=np.amax(x),
+                                                                           metal_work_function=metal_work_function,
+                                                                           use_srv=use_srv)
+                self.log('Conductivity = {0:.3E} S/cm, x = {1:.3E} um, [Na] = {2:.3E} cm^-3'.format(
+                    conductivity, x[idx], ct[idx]
+                ))
+            else:
+                # # Save conductivity profile in a .plx file
+                # conductivity_filename = "conductivity_t{0:.0f}.plx".format(time[i])
+                # conductivity_fullname = os.path.join(self._folder_path, conductivity_filename)
+                # with open(conductivity_fullname, 'w') as fp:
+                #     fp.write("\"MetalConductivity\"\n")
+                #     line = "75E-3\t0\n"
+                #     line += "50E-3\t0\n"
+                #     line += "25E-3\t0\n"
+                #     line += "1E-4\t0\n"
+                #     fp.write(line)
+                #     for xi, c in zip(x, conductivity):
+                #         line = "{0:1.4E}\t{1:1.4E}\n".format(xi, c)
+                #         fp.write(line)
+                # self.log('Created concentration file \'{0}\'.'.format(conductivity_fullname))
+                # Update the parfile with the concentration
+                # self.srv_param(cNa=ct, time=time[i], use_srv=True)
+                self.log('Processing time t = {0:.0f} s'.format(time[i]))
+
+                [sde_filename, sdevice_filename] = self.update_files_metal(concentration=ct, x=x, time=time[i],
+                                                                           cylindrical=cylindrical,
+                                                                           activated_na=activated_na,
+                                                                           fixed_conductivity=fixed_conductivity,
+                                                                           shunt_depth=shunt_depth,
+                                                                           metal_work_function=metal_work_function,
+                                                                           use_srv=use_srv)
             # Run sde
             success: bool = self.run_sde(input_file=sde_filename)
             if not success:
                 raise RuntimeError('Error running sde. Stopping program execution.')
             # Run sdevice
             self.run_sdevice(input_file=sdevice_filename)
+            self.export_xcut_band_diagram(tdr_file='n_t{0:d}_light_000000_des.tdr'.format(i), x_cut=band_diagram_xcut)
+            self.log('Creating a band diagram along x_cut={0:.3f} um'.format(band_diagram_xcut))
 
         self.log('Converting JV plots to tdr files...')
         self.plt2tdr()
@@ -504,7 +535,8 @@ class PIDModel:
                            cylindrical: float = False,
                            activated_na: float = 1.0,
                            fixed_conductivity: float = 0,
-                           shunt_depth: float = 0) -> List[str]:
+                           shunt_depth: float = 0,
+                           metal_work_function: float = 4.05) -> List[str]:
         """
         This method modifies the Sentaurus input files to include updated shunt depth and modified external files
         (including the .par file). Creates a shunt with spatially varying conductivity_model based on doping profiles
@@ -530,6 +562,8 @@ class PIDModel:
             If the value is 0, ignore it. If > 0 use the value as a constant conductivity in the shunt (Ohm cm)^{-1}
         shunt_depth: float
             If the value is 0, ignore. If >0 use it as shunt depth (in um)
+        metal_work_function: float
+            The work function of the metal shunt (default 4.05 eV)
 
         Returns
         -------
@@ -660,7 +694,7 @@ class PIDModel:
         # Change the parfile
 
         parfile = '{0}_t{1:d}.par'.format(os.path.join(output_folder, 'sdevice'), int(time))
-        S0 = self.estimate_srv(cNa=concentration, time=time, use_srv=use_srv)
+        S0 = self.estimate_srv(cNa=concentration, use_srv=use_srv)
         # The directory to save the data to
         output_folder = self._folder_path
         # Limit to 5 significant digits
@@ -688,7 +722,8 @@ class PIDModel:
 
         substitutions = {
             'S0_val': s0_val,
-            'shunt_conductivity': shunt_conductivity
+            'shunt_conductivity': shunt_conductivity,
+            'metal_work_function': metal_work_function
         }
         # Load the template file
         template_file_par_file = open(os.path.join(self._cwd, self._parfile_template), 'r')
@@ -724,7 +759,8 @@ class PIDModel:
                            cylindrical: float = False,
                            activated_na: float = 1.0,
                            fixed_conductivity: float = 0,
-                           shunt_depth: float = 0) -> List[str]:
+                           shunt_depth: float = 0,
+                           metal_work_function: float = 4.05) -> List[str]:
         """
         This method modifies the Sentaurus input files to include updated shunt depth and modified external files
         (including the .par file). Creates a shunt with spatially varying conductivity_model based on doping profiles
@@ -750,6 +786,8 @@ class PIDModel:
             If the value is 0, ignore it. If > 0 use the value as a constant conductivity in the shunt (Ohm cm)^{-1}
         shunt_depth: float
             If the value is 0, ignore. If >0 use it as shunt depth (in um)
+        metal_work_function: float
+            The work function of the metal shunt (default 4.05 eV)
 
         Returns
         -------
@@ -908,7 +946,8 @@ class PIDModel:
 
         substitutions = {
             'S0_val': s0_val,
-            'shunt_conductivity': shunt_conductivity
+            'shunt_conductivity': shunt_conductivity,
+            'metal_work_function': metal_work_function
         }
         # Load the template file
         template_file_par_file = open(os.path.join(self._cwd, self._parfile_template), 'r')
@@ -938,8 +977,8 @@ class PIDModel:
 
         return [output_filename_sde, output_filename_sdevice]
 
-    def estimate_srv(self, cNa: Union[np.ndarray, List[float]], time: Union[int, float],
-                     use_srv: bool) -> float:
+    def estimate_srv(self, cNa: Union[np.ndarray, List[float]], Ndop: float = 1E19,
+                     use_srv: bool = True) -> float:
         """
         Function giving the parameterization of surface recombination velocity as a function of the surface Na
         concentration
@@ -948,8 +987,8 @@ class PIDModel:
         ----------
         cNa: List[float]
             List containing Na concentration as a function of depth (cm-3)
-        time: Union[int, float]
-            Temperature (C) (int or float)
+        Ndop: float
+            The doping level at the SiNx/emitter interface
         use_srv: bool
             if  False, S0 is set to zero
 
@@ -973,8 +1012,20 @@ class PIDModel:
             N2 = 1e10  # cm-3 (modified from Altermatt et al)
 
             # Parameterization of the surface recombination velocity
+            # TODO: verify how to implement this. The values N1, N2 seem to be coming from life time data from ASU
             S0 = S1 * (cNa[0] / N1) ** gamma1 + S2 * (
                     cNa[0] / N2) ** gamma2  # Altermatt et al, Journal of App Phys 92, 3187, 2002
+
+            # Estimate SRV for p++ emitter
+            # Altermatt's model (Eq 7)
+            # S_p0 = Sp1*(Ndop/Np1)^(gp1) + Sp2*(Ndop / Np2)^(gp2)
+            # Sp1 = 500, Sp2 = 60 (cm/s) # Untextured
+            # Sp1 = 2800, Sp2 = 300 (cm/s) # Textured
+            # gp1 = 0.6, gp2 = 3
+            # Np1 = Np2 = 1E19 cm^-3
+            Sp1, Sp2 = 2800, 300
+            Np1, Np2 = 1E19, 1E1
+            Sp0 = Sp1 * (Ndop/Np1) ** gamma1 + Sp2 * (Ndop / Np1) ** gamma2
 
             # Limit S0 to the thermal velocity of electrons
 
@@ -986,10 +1037,10 @@ class PIDModel:
             # and E=m*v^2
             vth = 100 * np.sqrt(3 * kB * TK / me)
 
-            if S0 > vth:  # cm/s
+            if Sp1 > vth:  # cm/s
                 S0 = vth  # cm/s
 
-        return S0
+        return Sp1
 
     def srv_param(self, cNa: Union[np.ndarray, List[float]], time: Union[int, float],
                   use_srv: bool) -> str:
@@ -1086,6 +1137,66 @@ class PIDModel:
 
         df = pd.DataFrame(data=file_index)
         df.to_csv(path_or_buf=os.path.join(output_folder, file_index_csv), index=False)
+
+    def export_xcut_band_diagram(self, tdr_file, x_cut: float):
+        """
+        Creates a cut along the y axis of the tdr mesh and exports the band diagram
+
+        Parameters
+        ----------
+        tdr_file: str
+            The path to the 2D file with the datasets
+        x_cut: float
+            The x-position of the cut along the y axis in um
+
+        Returns
+        -------
+
+        """
+        datasets = ['Y', 'ConductionBandEnergy', 'ValenceBandEnergy', 'eQuasiFermiEnergy', ' hQuasiFermiEnergy']
+        self.export_x_cut(tdr_file=tdr_file, x_cut=x_cut, variables=datasets)
+
+    def export_x_cut(self, tdr_file: str, x_cut: float, variables: List[str]):
+        """
+        Creates a cut along the y axis of the tdr mesh and exports the variables in the list
+
+        Parameters
+        ----------
+        tdr_file: str
+            The path to the 2D tdr file with the datasets
+        x_cut: float
+            The x-position of the cut along the y axis in um
+        variables: List[str]
+            The list of variables to export
+
+        Returns
+        -------
+
+        """
+        # The directory to save the data to
+        output_folder = self._folder_path
+        base_filename = os.path.splitext(os.path.basename(tdr_file))[0]
+
+        batch_file = '{0}_{1}.tcl'.format(os.path.join(output_folder, 'batch_bd'), base_filename)
+
+        substitutions = {
+            'tdr_file': tdr_file,
+            'x_cut_line': x_cut,
+            'variables': ' '.join(map(str, variables))
+        }
+        # Load the template file
+        template_file_par_file = open(os.path.join(self._cwd, self._batch_band_diagram_template), 'r')
+        src = Template(template_file_par_file.read())
+        # perform the substitutions
+        result = src.substitute(substitutions)
+        template_file_par_file.close()
+        # Save the sde file
+        with open(batch_file, 'w') as output_file:
+            output_file.write(result)
+
+        self.log('Created svisual batch process \'{0}\'.'.format(batch_file))
+
+        os.system('svisual -batch {0}'.format(batch_file))
 
     @staticmethod
     def tdr_list_plt_datasets(h5file: str) -> dict:

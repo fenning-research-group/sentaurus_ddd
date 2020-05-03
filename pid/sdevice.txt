@@ -3738,11 +3738,11 @@ Material = "Metal" {
     }
 
     Bandgap
-    { * For conductors Band Gap is zero and the following parameters are used:
+    {   * Metal work function
+        * For conductors Band Gap is zero and the following parameters are used:
         * WorkFunction	= 4.1	# [eV] # Same as Al
         * FermiEnergy	= 11.7	# [eV]
-        WorkFunction	= 4.05	# [eV] # Same as Al
-        FermiEnergy	= 4.05	# [eV]
+        WorkFunction	= ${metal_work_function}	# [eV] # Same as Al
       * for backward compatibility Chi0 could be used to define the work function.
     }
 

@@ -11,9 +11,9 @@ import pid.analysis as pia
 import matplotlib.gridspec as gridspec
 from scipy import interpolate
 
-base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\fixed_conductivity\symmetrical_contacts\1.0_um_shunt'
+base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\work_function'
 output_folder = r'all_plots'
-csv_index = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\fixed_conductivity\symmetrical_contacts\1.0_um_shunt\all_plots\file_index.csv'
+csv_index = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\work_function\all_plots\file_index.csv'
 xfmt = ScalarFormatter(useMathText=True)
 xfmt.set_powerlimits((-3, 3))
 
@@ -73,7 +73,7 @@ if __name__ == '__main__':
 
     r0 = index_df.iloc[0]
     fn0 = r0['filename']
-    conductivity0 = float(r0['conductivity'])
+    work_function0 = float(r0['work_function'])
     analyzer = pia.Analysis(folder_path=base_folder)
     jv_curve0 = analyzer.read_jv(h5_filename=os.path.join(base_folder, fn0))
     nu_data0 = analyzer.estimate_efficiency(voltage=jv_curve0['voltage (V)'],
@@ -89,9 +89,9 @@ if __name__ == '__main__':
     for i, sd in enumerate(shunt_depths[shunt_depths > 0]):
         cmap = mpl.cm.get_cmap(color_palettes[i])
         files_df: pd.DataFrame = index_df[index_df['shunt depth (um)'] == sd].reset_index(drop=True)
-        conductivities = np.array(files_df['conductivity'])
-        normalize = mpl.colors.LogNorm(vmin=np.amin(conductivities), vmax=np.amax(conductivities))
-        colors = [cmap(normalize(c)) for c in conductivities]
+        work_functions = np.array(files_df['work_function'])
+        normalize = mpl.colors.Normalize(vmin=np.amin(work_functions), vmax=np.amax(work_functions))
+        colors = [cmap(normalize(c)) for c in work_functions]
         scalar_maps = mpl.cm.ScalarMappable(cmap=cmap, norm=normalize)
         results = np.empty(len(files_df), dtype=nu_t_dtype)
         
@@ -107,46 +107,46 @@ if __name__ == '__main__':
 
         for j, r in files_df.iterrows():
             fn = r['filename']
-            conductivity = float(r['conductivity'])
+            wf = float(r['work_function'])
             print('Analyzing file: {0}'.format(fn))
             jv_curve = analyzer.read_jv(h5_filename=os.path.join(base_folder, fn))
             nu_data = analyzer.estimate_efficiency(voltage=jv_curve['voltage (V)'],
                                                    current=jv_curve['current (mA/cm2)'])
             results[j] = (
-                sd, conductivity, nu_data['jsc'], nu_data['voc'], nu_data['pd_mpp'], nu_data['v_mpp'], nu_data['j_mpp'],
+                sd, wf, nu_data['jsc'], nu_data['voc'], nu_data['pd_mpp'], nu_data['v_mpp'], nu_data['j_mpp'],
                 nu_data['efficiency']
             )
             idx_curve = jv_curve['current (mA/cm2)'] >= 0
             voltage = jv_curve['voltage (V)'][idx_curve]
             current = jv_curve['current (mA/cm2)'][idx_curve]
-            ax1.plot(voltage, current, color=cmap(normalize(conductivity)))
+            ax1.plot(voltage, current, color=cmap(normalize(wf)))
 
         ax1.plot(voltage0, current0, color='r')
 
         # interpoate the efficiency
         # interpolation = interpolate.splrep(conductivities, results['efficiency'], k=3)
-        f = interpolate.interp1d(conductivities, results['efficiency'], kind='slinear', fill_value="extrapolate")
-        t_interp = np.linspace(np.amin(conductivities), np.amax(conductivities), num=1000)
+        f = interpolate.interp1d(work_functions, results['efficiency'], kind='slinear', fill_value="extrapolate")
+        t_interp = np.linspace(np.amin(wf), np.amax(wf), num=1000)
         nu_interp = f(t_interp)
         # nu_interp = interpolate.splev(t_interp, interpolation)
 
-        ax2.plot(conductivities, results['efficiency'] * 100, marker='o', ls='none', fillstyle='none',
-                 color=cmap(normalize(np.amax(conductivity))),
+        ax2.plot(work_functions, results['efficiency'] * 100, marker='o', ls='none', fillstyle='none',
+                 color=cmap(normalize(np.amax(wf))),
                  label='Simulation')
 
-        ax2.plot(conductivity0, efficiency0['efficiency']*100, marker='o', color='r', ls='none', fillstyle='none')
+        ax2.plot(work_function0, efficiency0['efficiency']*100, marker='o', color='r', ls='none', fillstyle='none')
 
         divider = make_axes_locatable(ax1)
         cax = divider.append_axes("right", size="5%", pad=0.03)
         cbar = fig.colorbar(scalar_maps, cax=cax)
-        cbar.set_label('Conductivity (S/cm)', rotation=90)
+        cbar.set_label('Work Function (S/cm)', rotation=90)
 
         ax1.set_xlabel('Bias (V)')
         ax1.set_ylabel('J (mA/cm$^2$)')
         
 #        ax1.set_ylabel('J$_{\mathregular{sc}}$ unshunted - J (mA/cm$^2$)')
 
-        ax2.set_xlabel('Conductivity (S/cm)')
+        ax2.set_xlabel('Work Function (S/cm)')
         ax2.set_ylabel('Efficiency (%)')
 
 #        ax2.plot(t_interp, nu_interp * 100, ':', color='k', dashes=(3, 1), label='Guide to the eye', lw=1.5)
@@ -157,9 +157,9 @@ if __name__ == '__main__':
         ax2.yaxis.set_major_formatter(xfmt)
         ax2.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
         ax2.yaxis.set_minor_locator(mticker.AutoMinorLocator(2))
-        ax2.set_xscale('log')
-        ax2.xaxis.set_major_locator(mpl.ticker.LogLocator(base=10.0, numticks=6))
-        ax2.xaxis.set_minor_locator(mpl.ticker.LogLocator(base=10.0, numticks=60, subs=np.arange(2, 10) * .1))
+#        ax2.set_xscale('log')
+#        ax2.xaxis.set_major_locator(mpl.ticker.LogLocator(base=10.0, numticks=6))
+#        ax2.xaxis.set_minor_locator(mpl.ticker.LogLocator(base=10.0, numticks=60, subs=np.arange(2, 10) * .1))
 
         ax1.set_title('Shunt Depth: {0:.1f} um'.format(sd))
         ax2.set_title('Shunt Depth: {0:.1f} um'.format(sd))
