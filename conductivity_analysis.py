@@ -17,9 +17,10 @@ from scipy.linalg import svd
 
 # radius = 50E-4 # cm
 area = np.pi*(5)*1E-6
+max_time = 23 # hr
 
 
-base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\time_dependence\20200428_sc=1E2-D2=1E-14_shuntDepth=1.0-0'
+base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\time_dependence\conductivity_profle\20200428_sc=1E2-D2=1E-14_shuntDepth=1.0-0'
 output_folder = r'analysis_plots'
 csv_index = r'file_index.csv'
 na_file = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\time_dependence\20200428_sc=1E2-D2=1E-14_shuntDepth=1.0-0\two_layers_D1=4E-16cm2ps_D2=1E-14cm2ps_Cs1E+20cm3_T85_time96hr_h1.0e-10_m1.0e+00_pnp.h5'
@@ -200,8 +201,8 @@ if __name__ == '__main__':
             t = float(row['time (s)']) / 3600
             c = np.array(profiles[ct_ds])
             jv = analysis.read_jv(h5_filename=os.path.join(base_folder, 'jv_plots', row['filename']))
-            jv = jv[jv['current (mA/cm2)'] >= 0]
-            ax2.plot(jv['voltage (V)'], jv['current (mA/cm2)'], '-', color=cmap(normalize(t)))
+            # jv = jv[jv['current (mA/cm2)'] >= 0]
+            ax2.plot(jv['voltage (V)'], jv['current (mA/cm2)'], '-', color=cmap(normalize(t)), zorder=0)
             ax1.plot(x, c, color=jv_colors[i])
             # Fit Rsh from the interval between 0 and 0.1 V (assume linear behavior)
             idx_fit = jv['voltage (V)'] <= 0.15
@@ -225,6 +226,7 @@ if __name__ == '__main__':
     ax1.set_xlabel('Depth (um)')
     ax1.set_ylabel('[Na] (cm$^{-3}$)')
     
+    
 
     ax2.set_xlabel('Bias (V)')
     ax2.set_ylabel('J (mA/cm$^{2}$)')
@@ -234,7 +236,8 @@ if __name__ == '__main__':
     ax1.yaxis.set_minor_locator(mpl.ticker.LogLocator(base=10.0, numticks=60, subs=np.arange(2, 10) * .1))
     ax1.set_xlim(0, np.amax(x))
     ax1.set_ylim(bottom=1E14, top=1E18)
-    ax2.set_xlim(0, voc_max)
+    ax2.set_ylim(bottom=0.0)
+    ax2.set_xlim(0, 0.7)
 
     ax1.xaxis.set_major_formatter(xfmt)
     ax1.xaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
@@ -246,7 +249,7 @@ if __name__ == '__main__':
     ax2.xaxis.set_minor_locator(mticker.AutoMinorLocator(2))
    
     ax2.yaxis.set_major_formatter(xfmt)
-    ax2.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
+    ax2.yaxis.set_major_locator(mticker.MaxNLocator(5, prune='lower'))
     ax2.yaxis.set_minor_locator(mticker.AutoMinorLocator(2))
 
     ax1.set_title('Concentration Profile')
@@ -384,8 +387,8 @@ if __name__ == '__main__':
     ax2.set_ylabel('$R_{\mathrm{sh}}$ ($\Omega$ cm$^{2}$)')
 
     
-    ax1.set_xlim(0, np.amax(time_h))
-    ax2.set_xlim(0, np.amax(time_h))
+    ax1.set_xlim(0, min(max_time, np.amax(time_h)))
+    ax2.set_xlim(0, min(max_time, np.amax(time_h)))
     
     ax1.xaxis.set_label_position('top')
     

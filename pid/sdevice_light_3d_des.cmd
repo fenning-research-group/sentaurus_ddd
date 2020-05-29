@@ -20,7 +20,7 @@ File {
 
 Electrode {
 	* defines which contacts have to be treated as electrodes
-	* & initial boundary conditions
+	* and initial boundary conditions
 	* obviously, electrode names must match the contact names of the
 	* sde_dvs.cmd file
 	{ name="em_contact" voltage=0.0 }
@@ -96,7 +96,6 @@ Plot {
 }
 
 Math {
-    ${cylindrical}
     * use previous two solutions (if any) to extrapolate next
     Extrapolate
     * use full derivatives in Newton method
@@ -115,12 +114,11 @@ Math {
     hDrForceRefDens=1e10
     * maximum number of iteration at each step
     * choosing the solver of the linear system
-    Method=ParDiSo
-    * Method= Blocked
-    * Method= ILS
-	SubMethod= ParDiSo
+    * Method=ParDiSo
+    Method= Blocked
+	* SubMethod= ParDiSo
 
-	* SubMethod= ILS(set= 12) * Selects ILS as linear solver; use "set 12" below
+	SubMethod= ILS(set= 1) * Selects ILS as linear solver; use "set 12" below
 	ILSrc= "
 	set (1) { // Default - repeated for reference
 	  iterative(gmres(100),tolrel=1e-8,tolunprec=1e-4,tolabs=0,maxit=200);
@@ -156,6 +154,7 @@ Math {
     CNormPrint
     * to avoid convergence problem when simulating defect-assisted tunneling
     * NoSRHperPotential
+    NumberOfThreads= 40
 }
 
 * Solve the transport equations using the quasistationary command
@@ -163,7 +162,7 @@ Solve {
 	* EQUILIBRIUM
     NewCurrentPrefix= "tmp_"
     Poisson
-    NewCurrentPrefix= ""
+    * NewCurrentPrefix= ""
     Transient (
         InitialTime= 0 FinalTime= 1.2
         InitialStep= 1 MaxStep= 1 MinStep= 1e-5
@@ -183,7 +182,7 @@ Solve {
 	    MaxStep = 0.025
 	    MinStep=0.00001
 	    Goal {name= "base_contact" voltage = 0.8}
-	    Plot { range=(0, 1) intervals=2 }
+	    Plot { range=(0, 1) intervals=1 }
 	) {coupled {poisson electron hole} }
 
 	System("rm -f ${folder_path}/tmp_*")

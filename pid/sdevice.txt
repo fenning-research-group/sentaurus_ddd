@@ -2919,7 +2919,7 @@ Material = "Silicon" {
 
 } # End of material Silicon
 
-Material = "Nitride" {
+Material = "Si3N4" {
 
     Epsilon
     { *  Ratio of the permittivities of material and vacuum
