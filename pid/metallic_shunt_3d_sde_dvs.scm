@@ -13,15 +13,14 @@
 (define contactWidth 			${contact_length})
 (define cellWidth 				${cell_width})
 (define cellLength 				${cell_length})
-(define THICKNESS 				200)
-(define emitterThickness 	0.6)
+(define THICKNESS 				160)
+(define emitterThickness 	0.4)
 (define thicknessARC 			75e-3)
 
 ; The thickness of the Al BSF
 (define tBSF 			0.3)
 
 (define SHUNT_DEPTH 			${shunt_depth}) ; modified by the batch Sentaurus script based on the Na profile
-
 
 ; New-replace-old option (default)
 (sdegeo:set-default-boolean "ABA") ; subtract overlapping regions from the existing regions
@@ -31,12 +30,12 @@
 (define base_doping 1e16) ; Silicon wafer base doping
 
 ; MESH PARAMETERS
-(define xmax 10)
-(define xmin 0.1)
-(define ymax 10)
-(define ymin 0.1)
-(define zmax 20)
-(define zmin 0.1)
+(define xmax (/ cellWidth 10))
+(define xmin 1)
+(define ymax (/ cellLength 10))
+(define ymin 1)
+(define zmax (/ THICKNESS 20))
+(define zmin 0.5)
 ; Import optical generation file
 (define OptGenFile "${optical_generation_file}" )
 
@@ -72,9 +71,6 @@ ${shunts}
 		(sdegeo:set-default-boolean "ABA") ; subtract overlapping regions from the existing regions
 	)
 )
-
-
-
 
 ; *** DOPING ****
 ; Base
@@ -185,7 +181,7 @@ ${shunts}
 
 ; Mesh refinement around the junction (go up down to twice the shunt depth)
 (sdedr:define-refeval-window "RefWin.Junction" "Cuboid" (position 0 0 0) (position cellWidth cellLength 5))
-(sdedr:define-refinement-size "RefDef.Junction" (/ xmax 10) (/ ymax 10) (/ ymax 10) (/ xmin 10) (/ ymin 10) (/ zmin 10))
+(sdedr:define-refinement-size "RefDef.Junction" (/ xmax 5) (/ ymax 5) (/ zmax 40) (/ xmin 10) (/ ymin 10) (/ zmin 100))
 (sdedr:define-refinement-placement "PlacementRF.Junction" "RefDef.Junction" "RefWin.Junction")
 
 ;*********************** NOTE: add cond statement to define mesh refinement depending on the type of emitter
@@ -199,8 +195,8 @@ ${shunt_refinement}
 	(position cellWidth cellLength (- THICKNESS))
 )
 (sdedr:define-refinement-size "RefDef.AlBSF"
-	(/ xmax 10) (/ ymax 10) (/ zmax 10)
-	(/ xmin 10) (/ ymin 10) (/ zmin 10)
+	(/ xmax 1) (/ ymax 1) (/ zmax 10)
+	(/ xmin 1) (/ ymin 1) (/ zmin 10)
 )
 (sdedr:define-refinement-placement "PlaceRF.AlBSF" "RefDef.AlBSF" "RefWin.AlBSF")
 
@@ -211,6 +207,10 @@ ${shunt_refinement}
 	(position (/ contactWidth 2) 0 0)
 	(position (- cellWidth (/ contactWidth 2)) cellLength 0)
 )
+(sdedr:define-refinement-size "RefDef.Optical_1D"
+	(/ xmax 5) (/ ymax 5) (/ zmax 10)
+	(/ xmin 5) (/ xmin 5) (/ zmin 20)
+)
 (sdedr:define-1d-external-profile "RefDef.Optical_1D" OptGenFile "Scale" 1.0 "Range" 0 THICKNESS "Erf" "Factor" 0) ;
 (sdedr:define-analytical-profile-placement "PlaceRF.Optical_1D" "RefDef.Optical_1D" "RefWin.Optical" "Negative" "NoReplace" "Eval")
 
@@ -218,20 +218,26 @@ ${shunt_refinement}
 (display "  front contact refinement") (newline)
 (sdedr:define-refinement-window "RefWin.frontContact1" "Cuboid"
 	(position  0 0 0)
-	(position  (+ contactWidth 1) cellLength (- 10))
+	(position  contactWidth cellLength (- 5))
 )
 
 (sdedr:define-refinement-window "RefWin.frontContact2" "Cuboid"
-	(position  (- cellWidth (+ contactWidth 1)) 0 0)
-	(position  cellWidth cellLength (- 10))
+	(position  (- cellWidth contactWidth) 0 0)
+	(position  cellWidth cellLength (- 5))
 )
 
-(sdedr:define-refinement-size "RefDef.frontContact"
-	(/ contactWidth 10) (/ cellLength 10) (/ zmax 10)
-	(/ contactWidth 50) (/ cellLength 50) (/ zmin 10)
+(sdedr:define-refinement-size "RefDef.frontContact1"
+	(/ contactWidth 5) (/ cellLength 5) (/ zmax 5)
+	(/ contactWidth 20) (/ cellLength 20) (/ zmin 5)
 )
-(sdedr:define-refinement-placement "PlaceRef.frontContact1" "RefDef.frontContact" "RefWin.frontContact1" )
-(sdedr:define-refinement-placement "PlaceRef.frontContact2" "RefDef.frontContact" "RefWin.frontContact2" )
+
+(sdedr:define-refinement-size "RefDef.frontContact2"
+	(/ contactWidth 5) (/ cellLength 5) (/ zmax 5)
+	(/ contactWidth 20) (/ cellLength 20) (/ zmin 5)
+)
+
+(sdedr:define-refinement-placement "PlaceRef.frontContact1" "RefDef.frontContact1" "RefWin.frontContact1" )
+(sdedr:define-refinement-placement "PlaceRef.frontContact2" "RefDef.frontContact2" "RefWin.frontContact2" )
 
 (display "Finished refinements. Ready to mesh!") (newline)
 

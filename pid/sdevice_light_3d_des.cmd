@@ -15,6 +15,8 @@ File {
 	Plot = "${node_out}.tdr"
 	* to visualize electrical characteristics at the electrodes
 	Current= "${node_out}.plt"
+	* The output log
+	Output= "${node_out}_output"
 
 }
 
@@ -104,7 +106,7 @@ Math {
     RelErrControl
     * relative error= 10^(-Digits)
     Digits=7
-    Iterations= 100
+    Iterations= 25
 	Notdamped= 100
     * absolute error
     Error(electron)=1e8
@@ -172,17 +174,20 @@ Solve {
 
 	quasistationary (
 	    InitialStep = 0.01
-	    MaxStep = 0.10 * Max voltage step of 50 mV in the IV curve
+	    MaxStep = 0.10 * Max voltage step of 100 mV in the IV curve
 	    MinStep=0.001
-	    Goal {name= "base_contact" voltage = 0.0}
+	    Goal {name= "base_contact" voltage = 0.5}
+	    Plot { range=(0, 1) intervals=1 }
+	    * Plot { Time= (0.0) NoOverwrite}
 	) {coupled {poisson electron hole} }
 	
 	quasistationary (
-	    InitialStep = 0.01
-	    MaxStep = 0.025
+	    InitialStep = 0.05
+	    MaxStep = 0.05
 	    MinStep=0.00001
-	    Goal {name= "base_contact" voltage = 0.8}
-	    Plot { range=(0, 1) intervals=1 }
+	    Increment=2
+	    Decrement=4
+	    Goal {name= "base_contact" voltage = 0.75}
 	) {coupled {poisson electron hole} }
 
 	System("rm -f ${folder_path}/tmp_*")

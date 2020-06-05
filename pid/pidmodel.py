@@ -43,6 +43,8 @@ class PIDModel:
     _simulation_indices: np.ndarray = np.array([])
     _spectrum: str = 'am15-g_reduced.txt'
     _parfile_template: str = 'sdevice.txt'
+    _conductivity_h5: str = None
+    _valid_shunt_geometries = ['rectangle', 'triangle']
 
     def __init__(self, folder_path: str = "/home/linux/ieng6/na299x/na299x/DB/Erick/PID/test",
                  na_h5_file: str = na_file,
@@ -94,6 +96,7 @@ class PIDModel:
             group_time = hf['time']
             self._na_profile_time_array = np.array(hf['time'])
             self._temperature = float(group_time.attrs['temp_c'])
+            self._diffusivity_na_si = float(hf['L2'].attrs['D'])
 
     def run_pid(self, start_step: int = 0, end_step: int = 0, skip_nb: int = 0, overwrite_folder: bool = False):
         """
@@ -220,15 +223,21 @@ class PIDModel:
         """
         min_delta = self._na_profile_time_array[1] - self._na_profile_time_array[0]
 
-        if spacing not in ["linear", "log", "geometric"]:
+        if spacing not in ["linear", "log", "geometric", "diffusion"]:
             spacing = "log"  # Default to log
 
         if spacing == "linear":
             proposed_times = np.linspace(t_min, t_max, t_steps + 1)
         elif spacing == "log":
             t_min = t_min if t_min > 0 else 1E-1
-            proposed_times = np.logspace(np.log10(min_delta), np.log10(t_max), t_steps)
+            proposed_times = np.logspace(np.log10(t_min), np.log10(t_max), t_steps)
             proposed_times = np.insert(proposed_times, 0, 0.0)
+        elif spacing == "diffusion":
+            proposed_times = utils.diffusion_length_spaced(
+                t_max=t_max,
+                diffusion_coefficient=self._diffusivity_na_si,
+                steps=t_steps
+            )
         else:
             proposed_times = utils.geometric_series_spaced(
                 max_val=t_max,
@@ -247,7 +256,11 @@ class PIDModel:
                       three_dimensional: bool = True,
                       shunt_depth: float = 0, metal_work_function: float = 4.05,
                       uniform_profile: bool = False,
-                      use_srv: bool = False, illuminated: bool = True):
+                      use_srv: bool = False, conductivity_cutoff: float = 1E-10,
+                      shunt_geometry: str = "rectangle",
+                      shunt_length: float = 0,
+                      n_regions: int = 100,
+                      illuminated: bool = True):
         """
         Start the sdevice simulation for each C(t) in [startstep:skip_nb:endstep]
 
@@ -274,6 +287,15 @@ class PIDModel:
             True if using a uniform conductivity in the shunt based on the concentration
         use_srv: bool
             True if estimating SRV
+        conductivity_cutoff: float
+            The minimum value the conductivity should have for the region in the shunt to be drawn (S/cm)
+        shunt_geometry: str
+            Only used in 3D simulations. It defines the shape of the shunt [rectangle, triangle].
+        shunt_length: float
+            If the shunt is a rectangle, the length of the rectangle. If this value is set to zero, uses the
+            simulated length of the silicon layer.
+        n_regions: int
+            The number of regions the max shunt depth should be divided in
         illuminated: bool
             If set to True, simulates an illuminated device, otherwise simulates a dark I-V. Default: True
 
@@ -298,6 +320,11 @@ class PIDModel:
             time = np.array(hf.get('time'))
             depth = np.array(hf.get('L2/x'))
 
+        self._conductivity_h5 = os.path.join(self._folder_path, 'conductivity_profiles.h5')
+        with h5py.File(self._conductivity_h5, 'w') as hf_conductivity:
+            hf_conductivity.create_group('/conductivity')
+            hf_conductivity['/conductivity'].attrs['segregation_coefficient'] = self._segregation_coefficient
+
         x = (depth - depth[0])
         time_msk = np.zeros(len(time), dtype=bool)
         time_msk[requested_indices.astype(int)] = True
@@ -315,8 +342,19 @@ class PIDModel:
             with h5py.File(self._NaProfileFileName, 'r') as hf:
                 group_si_c = hf['/L2/concentration']
                 ct = np.array(group_si_c[ct_ds])
+                c_min = np.amin(np.abs(ct))
+                ct[ct < 0] = c_min
             # Estimate the conductivity
             conductivity = self.conductivity_model(ct[:], activated_na=activated_na)
+            dsc_str = 'sigma_{0:d}'.format(i)
+
+            with h5py.File(self._conductivity_h5, 'a') as hf_conductivity:
+                grp = hf_conductivity['/conductivity']
+                if dsc_str not in grp:
+                    ds = grp.create_dataset(dsc_str, (len(conductivity),), compression="gzip")
+                    ds[...] = conductivity
+                    ds.attrs['time'] = time[i]
+
             if uniform_profile:
                 idx = (np.abs(conductivity - conductivity[0] / 100)).argmin()
                 conductivity = conductivity[idx]
@@ -327,6 +365,7 @@ class PIDModel:
                                                                           fixed_conductivity=conductivity,
                                                                           shunt_depth=shunt_depth,
                                                                           metal_work_function=metal_work_function,
+                                                                          shunt_length=shunt_length,
                                                                           use_srv=use_srv)
                 self.log('Conductivity = {0:.3E} S/cm, x = {1:.3E} um, [Na] = {2:.3E} cm^-3'.format(
                     conductivity, x[idx], ct[idx]
@@ -351,14 +390,20 @@ class PIDModel:
                 # self.srv_param(cNa=ct, time=time[i], use_srv=True)
                 self.log('Processing time t = {0:.0f} s'.format(time[i]))
 
-                [sde_filename, sdevice_filename] = self.input_files_metal(concentration=ct, x=x, time=time[i],
-                                                                          three_dimensional=three_dimensional,
-                                                                          cylindrical=cylindrical,
-                                                                          activated_na=activated_na,
-                                                                          fixed_conductivity=fixed_conductivity,
-                                                                          shunt_depth=shunt_depth,
-                                                                          metal_work_function=metal_work_function,
-                                                                          use_srv=use_srv)
+                [sde_filename, sdevice_filename] = self.input_files_metal(
+                    concentration=ct, x=x, time=time[i],
+                    three_dimensional=three_dimensional,
+                    cylindrical=cylindrical,
+                    activated_na=activated_na,
+                    fixed_conductivity=fixed_conductivity,
+                    shunt_depth=shunt_depth,
+                    metal_work_function=metal_work_function,
+                    use_srv=use_srv,
+                    conductivity_cutoff=conductivity_cutoff,
+                    shunt_geometry=shunt_geometry,
+                    shunt_length=shunt_length,
+                    n_regions=n_regions
+                )
             # Run sde
             success: bool = self.run_sde(input_file=sde_filename)
             if not success:
@@ -428,7 +473,7 @@ class PIDModel:
         coord = -11.144769029961262
         slope = 0.717839509854622
 
-        sigma = (10 ** coord) * (cshunt ** slope)  # S/cm
+        sigma = np.power(10, coord) * np.power(cshunt, slope)  # (10 ** coord) * (cshunt ** slope)  # S/cm
 
         return sigma
 
@@ -562,7 +607,10 @@ class PIDModel:
                           fixed_conductivity: float = 0,
                           shunt_depth: float = 0,
                           metal_work_function: float = 4.05,
-                          n_regions: int = 100) -> List[str]:
+                          n_regions: int = 100,
+                          conductivity_cutoff: float = 1E-10,
+                          shunt_geometry: str = "rectangle",
+                          shunt_length: float = 0) -> List[str]:
         """
         This method modifies the Sentaurus input files to include updated shunt depth and modified external files
         (including the .par file). Creates a shunt with spatially varying conductivity_model based on doping profiles
@@ -592,6 +640,13 @@ class PIDModel:
             The work function of the metal shunt (default 4.05 eV)
         n_regions: int
             The number of regions to interpolate the conductivity profile into
+        conductivity_cutoff: float
+            The minimum value the conductivity should have in order for the shunt region to be drawn (S/cm)
+        shunt_geometry: str
+            Only used in 3D simulations. It defines the shape of the shunt [rectangle, triangle].
+        shunt_length: float
+            If the shunt is a rectangle, the length of the rectangle. If this value is set to zero, uses the
+            simulated length of the silicon layer.
 
         Returns
         -------
@@ -644,7 +699,9 @@ class PIDModel:
                     debug_str = '3. len(x) = {0:d} Shunt depth = {1:.3E} um, Variable conductivity,  ' \
                                 'time = {2:.3f} h, sigma = {3}'
                     self.log(
-                        debug_str.format(len(x), shunt_depth, time / 3600, np.array_str(sigma))
+                        debug_str.format(
+                            len(x), shunt_depth, time / 3600, np.array_str(sigma[sigma >= conductivity_cutoff])
+                        )
                     )
                 elif len(x) >= 1:
                     if shunt_depth > 0:
@@ -655,7 +712,9 @@ class PIDModel:
                     debug_str = '4. len(x) = {0:d} Shunt depth = {1:.3E} um, Variable conductivity,  ' \
                                 'time = {2:.3f}, sigma = {3}'
                     self.log(
-                        debug_str.format(len(x), shunt_depth, time / 3600, np.array_str(sigma))
+                        debug_str.format(
+                            len(x), shunt_depth, time / 3600, np.array_str(sigma[sigma >= conductivity_cutoff])
+                        )
                     )
                 else:
                     dy = 0
@@ -694,13 +753,23 @@ class PIDModel:
         # Load the template file
         symmetry: str = '* No symmetry'
         if three_dimensional:
+            if shunt_geometry not in self._valid_shunt_geometries:
+                shunt_geometry = 'rectangle'
+
             sde_shunt_regions = ""
             sde_shunt_ref = ""
             if shunt_depth > 0:
-                shunt_regions = utils.get_triangle_regions(
-                    shunt_depth=shunt_depth, n_regions=n_regions,
-                    x_center=(self._cell_width / 2.), y_center=(self._cell_length / 2.)
-                )
+                if shunt_geometry == 'triangle':
+                    shunt_regions = utils.get_triangle_regions(
+                        shunt_depth=shunt_depth, n_regions=n_regions,
+                        x_center=(self._cell_width / 2.), y_center=(self._cell_length / 2.)
+                    )
+                else:
+                    shunt_length = shunt_length if shunt_length > 0 else shunt_depth
+                    shunt_regions = utils.get_rectangle_regions(
+                        shunt_depth=shunt_depth, shunt_length=shunt_length, n_regions=n_regions,
+                        x_center=(self._cell_width / 2.), y_center=(self._cell_length / 2.)
+                    )
                 sde_region_template = "(sdegeo:create-polygon " \
                                       "(list ${positions}) " \
                                       "\"Metal\" " \
@@ -710,22 +779,25 @@ class PIDModel:
                 # The base conductivity of
                 for reg in shunt_regions:
                     points = reg['points']
+                    region_idx = int(reg['region'])
+                    reg_conductivity = sigma[region_idx]
                     point_list = ""
-                    for i, p in enumerate(points):
-                        p_str = "(position {0:.6f} {1:.6f} {2:.6f})".format(p['x'], p['y'], p['z'])
-                        point_list += p_str
-                        if i < (len(points) - 1):
-                            point_list += " "
-                    pos_center = reg['center']
-                    reg_center_str = '(position {0:.8f} {1:.8f} {2:.8f})'.format(
-                        pos_center[0], pos_center[1], pos_center[2]
-                    )
-                    substitutions = {
-                        'region_name': 'shunt.Region.{0:d}'.format(reg['region']), 'positions': point_list,
-                        'center': reg_center_str
-                    }
-                    sde_shunt_regions += src.safe_substitute(substitutions)
-                    sde_shunt_regions += "\n"
+                    if reg_conductivity >= conductivity_cutoff:
+                        for i, p in enumerate(points):
+                            p_str = "(position {0:.6f} {1:.6f} {2:.6f})".format(p['x'], p['y'], p['z'])
+                            point_list += p_str
+                            if i < (len(points) - 1):
+                                point_list += " "
+                        pos_center = reg['center']
+                        reg_center_str = '(position {0:.8f} {1:.8f} {2:.8f})'.format(
+                            pos_center[0], pos_center[1], pos_center[2]
+                        )
+                        substitutions = {
+                            'region_name': 'shunt.Region.{0:d}'.format(reg['region']), 'positions': point_list,
+                            'center': reg_center_str
+                        }
+                        sde_shunt_regions += src.safe_substitute(substitutions)
+                        sde_shunt_regions += "\n"
 
                 sde_shunt_ref = '(sdedr:define-refeval-window ' \
                                 '"RefWin.Shunt" "Cuboid" ' \
@@ -733,8 +805,8 @@ class PIDModel:
                                 '(position {x1:.6f} {y1:.6f} (- {z:.6f})) )'
                 sde_shunt_ref += "\n"
                 sde_shunt_ref += '(sdedr:define-refinement-size "RefDef.Shunt" ' \
-                                 '(/ SHUNT_DEPTH 10) (/ SHUNT_DEPTH 10) (/ SHUNT_DEPTH 10) ' \
-                                 '(/ SHUNT_DEPTH 10) (/ SHUNT_DEPTH 10) (/ SHUNT_DEPTH 10))'
+                                 '(/ SHUNT_DEPTH 5) (/ SHUNT_DEPTH 5) (/ SHUNT_DEPTH 5) ' \
+                                 '(/ SHUNT_DEPTH 20) (/ SHUNT_DEPTH 20) (/ SHUNT_DEPTH 20))'
                 sde_shunt_ref += "\n"
                 sde_shunt_ref += '(sdedr:define-refinement-placement "PlaceRF.Shunt" "RefDef.Shunt" "RefWin.Shunt")'
                 x_center = self._cell_width / 2.
@@ -823,7 +895,8 @@ class PIDModel:
                     r0 = 1E50
                     self.log('Found conductivity = 0 at time {0:1.3f} hr'.format(time / 3600), level='WARNING')
                 substitutions = {'shunt_region': 'shunt.Region.{0:d}'.format(i), 'R0': '{0:1.4E}'.format(r0)}
-                shunt_conductivity += src.safe_substitute(substitutions)
+                if s >= conductivity_cutoff:
+                    shunt_conductivity += src.safe_substitute(substitutions)
 
         substitutions = {
             'S0_val': s0_val,
