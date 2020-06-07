@@ -408,6 +408,7 @@ class PIDModel:
             success: bool = self.run_sde(input_file=sde_filename)
             if not success:
                 raise RuntimeError('Error running sde. Stopping program execution.')
+                exit()
             # Run sdevice
             self.run_sdevice(input_file=sdevice_filename)
 
@@ -784,7 +785,7 @@ class PIDModel:
                     point_list = ""
                     if reg_conductivity >= conductivity_cutoff:
                         for i, p in enumerate(points):
-                            p_str = "(position {0:.6f} {1:.6f} {2:.6f})".format(p['x'], p['y'], p['z'])
+                            p_str = "(position {0:.8f} {1:.8f} {2:.8f})".format(p['x'], p['y'], p['z'])
                             point_list += p_str
                             if i < (len(points) - 1):
                                 point_list += " "

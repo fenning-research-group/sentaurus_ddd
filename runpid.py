@@ -12,7 +12,7 @@ import os
 pi_sqrt = np.sqrt(np.pi)
 emitter_depth = 0.3  # um
 # c_min_at_junction = 1E16  # cm^-3
-sigma_min_junction = 1
+sigma_min_junction = 10
 
 # def f(t: Union[np.ndarray, List[float], float], x: float, target_c: float,
 #       c_s: float, diffusivity: float) -> Union[np.ndarray, float]:
@@ -82,7 +82,7 @@ if __name__ == "__main__":
 
     results_path = '/home/erickmtz/sentaurus_pid/results/3D/'
     results_path += 'Cs={0:.0E}D1=4E-16_h={1:.0E}_D2={2:.0E}_rho={3:.0E}_L={4:.1f}_s={5:.0E}'.format(
-        cs, mtc, d2, rho, np.amax(depth) * np.sqrt(2.), sc
+        cs, mtc, d2, rho, shunt_length, sc
     )
     print('Results path:')
     print(results_path)
@@ -150,8 +150,7 @@ if __name__ == "__main__":
 
     pid_model.run_pid_metal(
         requested_indices=requested_time_points, overwrite_folder=True, use_srv=use_srv, conductivity_cutoff=1E-14,
-        shunt_geometry='rectangle', shunt_length=shunt_length, n_regions=int(simulation_thickness / 0.01)
-
+        shunt_geometry='triangle', shunt_length=shunt_length, n_regions=int(shunt_length/0.01)
     )
 
     # Copy the results to the host computer (remember to delete them later)

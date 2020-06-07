@@ -20,15 +20,15 @@ from scipy.linalg import svd
 cell_width = 25E-4
 cell_length = 50E-4
 area = cell_width * cell_length
-max_time = 23  # hr
 emitter_depth = 0.3 # um
+max_depth = 1 # um
 
 # base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\time_dependence\conductivity_profle\20200428_sc=1E2-D2=1E-14_shuntDepth=1.0-0'
-base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\3D\Cs=1E+20D1=4E-16\h=1E-12\D2=1E-16\rho=2E-05\L=1.4\s=5E+01'
+base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\3D\Cs=1E+22D1=4E-16_h=1E-12_D2=1E-16_rho=4E-05_L=5.8_s=5E+01'
 output_folder = r'analysis_plots'
 csv_index = r'file_index.csv'
-h5_root = r'G:\My Drive\Research\PVRD1\FENICS\SUPG_TRBDF2\simulations\results_two_layers\pnp\SWEEP_D,H'
-na_file = 'two_layers_D1=4E-16cm2ps_D2=1E-16cm2ps_Cs1E+20cm3_T85_time96hr_h1.0e-12_m1.0e+00_pnp.h5'
+h5_root = r'G:\My Drive\Research\PVRD1\FENICS\SUPG_TRBDF2\simulations\results_two_layers\pnp\SWEEP_D,H\4um'
+na_file = 'two_layers_D1=4E-16cm2ps_D2=1E-16cm2ps_Cs1E+22cm3_T85_time96hr_h1.0e-12_m1.0e+00_pnp.h5'
 xfmt = ScalarFormatter(useMathText=True)
 xfmt.set_powerlimits((-3, 3))
 
@@ -163,8 +163,6 @@ if __name__ == '__main__':
     if platform.system() == 'Windows':
         base_folder = r'\\?\\' + os.path.abspath(base_folder)
         h5_root = r'\\?\\' + os.path.abspath(h5_root)
-        base_folder = r'\\?\\' + os.path.abspath(base_folder)
-        h5_root = r'\\?\\' + os.path.abspath(h5_root)
 
     results_folder = os.path.join(base_folder, output_folder)
     if not os.path.exists(results_folder):
@@ -194,7 +192,7 @@ if __name__ == '__main__':
     fig = plt.figure()
     fig.set_size_inches(6.5, 3.5, forward=True)
     fig.subplots_adjust(hspace=0.25, wspace=0.15)
-    gs0 = gridspec.GridSpec(ncols=2, nrows=1, figure=fig, width_ratios=[0.75, 1])
+    gs0 = gridspec.GridSpec(ncols=2, nrows=1, figure=fig, width_ratios=[0.7, 1])
     gs00 = gridspec.GridSpecFromSubplotSpec(nrows=2, ncols=1, subplot_spec=gs0[0], hspace=0.1)
     gs10 = gridspec.GridSpecFromSubplotSpec(nrows=1, ncols=1, subplot_spec=gs0[1])
     ax1 = fig.add_subplot(gs00[0, 0])
@@ -223,10 +221,10 @@ if __name__ == '__main__':
             idx_fit = jv['voltage (V)'] <= 0.15
             res = fit_rsh(V=jv['voltage (V)'][idx_fit], J=jv['current (mA/cm2)'][idx_fit] / 1000)
             popt = res.x
-            #            print('popt = {0}'.format(popt))
+            # print('popt = {0}'.format(popt))
             pcov = find_pcov(res)
             ci = cf.confint(n=len(jv['voltage (V)'][idx_fit]), pars=popt, pcov=pcov, confidence=0.95)
-            #            ci = np.power(10, ci)
+            # ci = np.power(10, ci)
             rsh_data[i] = (time_h[i], popt[0], ci[0, 0], ci[0, 1])
 
     ax3.plot(efficiency_data['v_mpp (V)'], efficiency_data['j_mpp (mA/cm2)'],
@@ -234,8 +232,6 @@ if __name__ == '__main__':
     
     ax1.axvline(x=emitter_depth, color='k', ls='--', lw=1.0)
     ax2.axvline(x=emitter_depth, color='k', ls='--', lw=1.0)
-    
-
 
     divider = make_axes_locatable(ax3)
     cax = divider.append_axes("right", size="5%", pad=0.03)
@@ -257,12 +253,13 @@ if __name__ == '__main__':
     ax1.yaxis.set_minor_locator(mpl.ticker.LogLocator(base=10.0, numticks=50, subs=np.arange(2, 10) * .1))
     ax2.yaxis.set_major_locator(mpl.ticker.LogLocator(base=10.0, numticks=4))
     ax2.yaxis.set_minor_locator(mpl.ticker.LogLocator(base=10.0, numticks=40, subs=np.arange(2, 10) * .1))
-    ax1.set_xlim(0, np.amax(x))
-    ax2.set_xlim(0, np.amax(x))
+    ax1.set_xlim(0, max_depth)
+    ax2.set_xlim(0, max_depth)
     ax1.set_ylim(bottom=1E14, top=1E21)
     ax2.set_ylim(bottom=1E-6)
     ax3.set_ylim(bottom=0.0)
     ax3.set_xlim(0, 0.7)
+
 
     ax1.text(
         emitter_depth, ax1.get_ylim()[1], '\n p-n junction', color='k', horizontalalignment='left',
@@ -295,7 +292,7 @@ if __name__ == '__main__':
 
     # Plot the efficiency data
     fig = plt.figure()
-    fig.set_size_inches(5.0, 7.0, forward=True)
+    fig.set_size_inches(5.0, 5.5, forward=True)
     fig.subplots_adjust(hspace=0.1, wspace=0.35)
     gs0 = gridspec.GridSpec(ncols=1, nrows=1, figure=fig, width_ratios=[1])
     gs00 = gridspec.GridSpecFromSubplotSpec(nrows=3, ncols=1, subplot_spec=gs0[0])
@@ -363,14 +360,6 @@ if __name__ == '__main__':
     ax3.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
     ax3.yaxis.set_minor_locator(mticker.AutoMinorLocator(2))
 
-    # ax4.xaxis.set_major_formatter(xfmt)
-    # ax4.xaxis.set_major_locator(mticker.MaxNLocator(12, prune=None))
-    # ax4.xaxis.set_minor_locator(mticker.AutoMinorLocator(2))
-
-    # ax4.yaxis.set_major_formatter(xfmt)
-    # ax4.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
-    # ax4.yaxis.set_minor_locator(mticker.AutoMinorLocator(2))
-
     plt.tight_layout()
     # plt.show()
 
@@ -405,51 +394,6 @@ if __name__ == '__main__':
     ax1.set_ylabel('Bias (V)')
 
     plt.tight_layout()
-    # plt.show()
-
-    fig = plt.figure()
-    fig.set_size_inches(5.0, 4.5, forward=True)
-    fig.subplots_adjust(hspace=0.1, wspace=0.35)
-    gs0 = gridspec.GridSpec(ncols=1, nrows=1, figure=fig, width_ratios=[1])
-    gs00 = gridspec.GridSpecFromSubplotSpec(nrows=2, ncols=1, subplot_spec=gs0[0])
-    ax1 = fig.add_subplot(gs00[0, 0])
-    ax2 = fig.add_subplot(gs00[1, 0])
-
-    ax1.plot(time_h, 100 * efficiency_data['pd_mpp (mW/cm2)'] / p0, color='C0')
-    ax2.fill_between(time_h, rsh_data['Rsh lci'], rsh_data['Rsh uci'], color=lighten_color(mpl.colors.to_rgb('C1')))
-    ax2.plot(time_h, rsh_data['Rsh (Ohms cm2)'], color='C1')
-
-    ax2.set_xlabel('Time (hr)')
-
-    ax1.set_ylabel('$P_{\\mathrm{mpp}}/P_{\\mathrm{mpp}}(t=0)$')
-    ax2.set_ylabel('$R_{\mathrm{sh}}$ ($\Omega$ cm$^{2}$)')
-
-    ax1.set_xlim(0, min(max_time, np.amax(time_h)))
-    ax2.set_xlim(0, min(max_time, np.amax(time_h)))
-    ax1.set_ylim(50, 105)
-
-    ax1.xaxis.set_label_position('top')
-
-    ax1.tick_params(labelbottom=False, top=True, right=True, which='both')
-    ax2.tick_params(labelbottom=True, bottom=True, top=False, right=True, which='both')
-
-    ax2.set_yscale('log')
-    ax2.yaxis.set_major_locator(mpl.ticker.LogLocator(base=10.0, numticks=5))
-    ax2.yaxis.set_minor_locator(mpl.ticker.LogLocator(base=10.0, numticks=50, subs=np.arange(2, 10) * .1))
-
-    ax1.xaxis.set_major_formatter(xfmt)
-    ax1.xaxis.set_major_locator(mticker.MaxNLocator(12, prune=None))
-    ax1.xaxis.set_minor_locator(mticker.AutoMinorLocator(2))
-
-    ax1.yaxis.set_major_formatter(xfmt)
-    ax1.yaxis.set_major_locator(mticker.FixedLocator([50, 60, 70, 80, 90, 100]))
-    ax1.yaxis.set_minor_locator(mticker.AutoMinorLocator(2))
-
-    ax2.xaxis.set_major_formatter(xfmt)
-    ax2.xaxis.set_major_locator(mticker.MaxNLocator(12, prune=None))
-    ax2.xaxis.set_minor_locator(mticker.AutoMinorLocator(2))
-
-    plt.tight_layout()
     plt.show()
 
-    fig.savefig(os.path.join(results_folder, 'pmax_plot.png'), dpi=600)
+

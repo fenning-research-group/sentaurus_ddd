@@ -187,8 +187,8 @@ def get_rectangle_regions(shunt_depth: float = 1, shunt_length: float = 0, n_reg
     """
     # The side of the triangle
     shunt_length = shunt_length if shunt_length > 0 else shunt_depth
-    L = np.sqrt(2.) * shunt_depth
-    dy = np.sqrt(3.) * L / n_regions / 2.
+    L = np.sqrt(3./2.) * shunt_depth
+    dy = L / n_regions
     z_offset = 0
 
     data = []
@@ -257,7 +257,7 @@ def get_rectangle_regions(shunt_depth: float = 1, shunt_length: float = 0, n_reg
 
 
 def get_triangle_regions(shunt_depth: float = 1, n_regions: int = 100, x_center: float = 0,
-                         y_center: float = 0):
+                         y_center: float = 0, shunt_length: float = None):
     """
     Defines the shunt regions for a 3D device
 
@@ -271,13 +271,21 @@ def get_triangle_regions(shunt_depth: float = 1, n_regions: int = 100, x_center:
         The x position of the base side of the shunt (um)
     y_center: float
         The x position of the base side of the shunt (um)
+    shunt_length: float
+        If set, determines the side of the triangle (um) else, the side of the triangle is determined from the
+        projection of th shunt depth on the 111 SF fault.
 
     Returns
     -------
 
     """
     # The side of the triangle
-    L = np.sqrt(2.) * shunt_depth
+    shunt_length = abs(shunt_length)
+    Lp = np.sqrt(2.) * shunt_depth
+    if shunt_length is None or shunt_length > Lp or shunt_length == 0:
+        L = Lp
+    else:
+        L = shunt_length
     dy = np.sqrt(3.) * L / n_regions / 2.
     dx = L / 2 / n_regions
     z_offset = 0
