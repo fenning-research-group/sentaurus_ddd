@@ -660,6 +660,7 @@ class PIDModel:
         mesh_name = "n_t{0:d}".format(int(time))
         # Calculate segregation coefficient at each depth and the depth of the shunt
         cseg = np.abs(concentration) * self._segregation_coefficient
+        shunt_depth = abs(shunt_depth)
 
         # Get the conductivity
         if fixed_conductivity == 0:
@@ -685,7 +686,8 @@ class PIDModel:
                     )
                 )
             else:
-                shunt_depth = np.amax(x)  # Depth of the profile in um. The depth does not start at 0 so subtract x[0]
+                if shunt_depth == 0:
+                    shunt_depth = np.amax(x)  # Depth of the profile in um. The depth does not start at 0 so subtract x[0]
 
                 if len(x) >= n_regions:
                     # Interpolate the profile to get only n_regions points

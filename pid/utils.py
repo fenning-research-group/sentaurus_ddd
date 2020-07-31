@@ -280,12 +280,15 @@ def get_triangle_regions(shunt_depth: float = 1, n_regions: int = 100, x_center:
 
     """
     # The side of the triangle
-    shunt_length = abs(shunt_length)
     Lp = np.sqrt(2.) * shunt_depth
-    if shunt_length is None or shunt_length > Lp or shunt_length == 0:
+    if shunt_length is None:
         L = Lp
     else:
-        L = shunt_length
+        shunt_length = abs(shunt_length)
+        if shunt_length > Lp or shunt_length == 0:
+            L = Lp
+        else:
+            L = shunt_length
     dy = np.sqrt(3.) * L / n_regions / 2.
     dx = L / 2 / n_regions
     z_offset = 0

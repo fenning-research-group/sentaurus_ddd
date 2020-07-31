@@ -41,9 +41,14 @@ if __name__ == "__main__":
     parser.add_argument('-u', '--unattended', help='Unattended execution.',
                         action='store_true',
                         required=False)
+    parser.add_argument('-s', '--source_limited', help='Source limited simulation.',
+                        action='store_true',
+                        required=False)
     args = parser.parse_args()
     config_file = args.input
     attended = not args.unattended
+    source_limited = args.source_limited
+
 
     # Instantiate the config parser
     config = configparser.ConfigParser()
@@ -70,10 +75,12 @@ if __name__ == "__main__":
 
     with h5py.File(h5file, 'r') as hf:
         dst = hf['/time']
-        cs = dst.attrs['Csource']
+        if source_limited: # spyder
+            n_na = dst.attrs['na_0']
+        else:
+            cs = dst.attrs['Csource']
         d1 = hf['/L1'].attrs['D']
         d2 = hf['/L2'].attrs['D']
-        efield = float(hf['/L1'].attrs['electric_field_app'])
         mtc = dst.attrs['h']
         t_sim = np.array(hf.get('time'))
         depth = np.array(hf.get('L2/x'))
@@ -91,17 +98,15 @@ if __name__ == "__main__":
     print('Shunt length = {0:.3f} um.'.format(shunt_length))
     print('Shunt depth = {0:.3f} um.'.format(shunt_depth))
 
-    if efield > 0.1:
-        efield_str = '{0:.1f}MVcm'.format(efield)
-    elif efield > 1E-3:
-        efield_str = '{0:.1f}kVcm'.format(efield*1000)
+    results_path = '/home/erickmtz/sentaurus_pid/results/3D/recovery/'
+    if source_limited:
+        results_path += 'N_Na={0:.1E}moles_D1=4E-16_h={1:.0E}_D2={2:.0E}_rho={3:.0E}_SD={4:.1f}_s={5:.0E}'.format(
+            n_na, mtc, d2, rho, shunt_depth, sc
+        )
     else:
-        efield_str = '{0:.1f}Vcm'.format(efield*1E6)
-
-    results_path = '/home/erickmtz/sentaurus_pid/results/3D/'
-    results_path += '{efield}_Cs={0:.0E}D1=4E-16_h={1:.0E}_D2={2:.0E}_rho={3:.0E}_SD={4:.1f}_s={5:.0E}'.format(
-        cs, mtc, d2, rho, shunt_depth, sc, efield=efield_str
-    )
+        results_path += 'Cs={0:.0E}D1=4E-16_h={1:.0E}_D2={2:.0E}_rho={3:.0E}_SD={4:.1f}_s={5:.0E}'.format(
+            cs, mtc, d2, rho, shunt_depth, sc
+        )
     print('Results path:')
     print(results_path)
     pid_model = pdm.PIDModel(
@@ -137,28 +142,9 @@ if __name__ == "__main__":
     # If the time required to form the shunt is less than the simulation time
     # Sample the time points until shunt formation faster and slower beyond that point
 
-    if t_max - t_shunting > dt and t_shunting > 0:
-        t_steps_before_shunt = 4
-        requested_time_points_before_shunt = pid_model.request_time_points(
-            t_min=t_min, t_max=(t_shunting/2), t_steps=t_steps_before_shunt, spacing='linear'
-        )
-        t_steps_after_shunt = time_steps# - t_steps_before_shunt
-        proposed_times = utils.diffusion_length_spaced(
-            t_max=t_max, diffusion_coefficient=d2, steps=t_steps_after_shunt, t0=t_shunting
-        )  # np.linspace(t_shunting, t_max, num=t_steps_after_shunt)
-        requested_time_points_after_shunt = utils.get_indices_at_values(
-            x=t_sim,
-            requested_values=proposed_times
-        )
-
-        requested_time_points = np.concatenate([
-            requested_time_points_before_shunt, requested_time_points_after_shunt
-        ])
-
-    else:
-        requested_time_points = pid_model.request_time_points(
-            t_min=t_min, t_max=t_max, t_steps=time_steps, spacing='linear'
-        )
+    requested_time_points = pid_model.request_time_points(
+        t_min=0, t_max=t_max, t_steps=time_steps, spacing=time_sampling
+    )
 
     req_sim_times = np.array([t_sim[rt] / 3600 for rt in requested_time_points])
 
@@ -179,7 +165,7 @@ if __name__ == "__main__":
     # Get the basename of the config file
     config_file_name = os.path.basename(config_file)
     # Construct the path to the working directory
-    conifg_file_destination = os.path.join(results_path, config_file_name)
+    conifg_file_destination = os.path.join(results_path), config_file_name
     # Move the input file to the working folder
     os.system('mv {0} {1}'.format(config_file, conifg_file_destination))
 

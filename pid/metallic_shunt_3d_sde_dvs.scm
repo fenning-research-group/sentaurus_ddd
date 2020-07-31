@@ -242,9 +242,9 @@ ${shunt_refinement}
 (display "Finished refinements. Ready to mesh!") (newline)
 
 ; (c) Tight surface tolerance (See Sentaurus Structure Editor Section 7 page 233)
-(sde:setrefprops -0.1 15 0 0)
+; (sde:setrefprops -0.1 15 0 0)
 
 ; * BUILDING MESH
 ;(sde:build-mesh "snmesh" "-a -c boxmethod" "${nodenum}") ; save mesh files with name "nodnum"
-(sde:build-mesh " -offset -m 1000000 --threads 40 " "${nodenum}") ; save mesh files with name "nodnum"
-;(sde:build-mesh "--threads 40 " "${nodenum}") ; save mesh files with name "nodnum"
+;(sde:build-mesh " -offset -m 1000000 --threads 40 " "${nodenum}") ; save mesh files with name "nodnum"
+(sde:build-mesh "--threads 40 " "${nodenum}") ; save mesh files with name "nodnum"

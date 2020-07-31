@@ -157,6 +157,7 @@ Math {
     * to avoid convergence problem when simulating defect-assisted tunneling
     * NoSRHperPotential
     NumberOfThreads= 40
+    StackSize = 900000000
 }
 
 * Solve the transport equations using the quasistationary command

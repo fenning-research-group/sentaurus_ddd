@@ -10,25 +10,26 @@ import os
 import pid.analysis as pia
 import pid.confidence as cf
 import matplotlib.gridspec as gridspec
-from scipy import interpolate
+# from scipy import interpolate
 import h5py
 from scipy import optimize
 from scipy.linalg import svd
+import shutil
 
 # radius = 50E-4 # cm
 # area = np.pi*(5)*1E-6
-cell_width = 25E-4
+cell_width = 0.1
 cell_length = 50E-4
 area = cell_width * cell_length
 emitter_depth = 0.3 # um
 max_depth = 1 # um
 
 # base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\time_dependence\conductivity_profle\20200428_sc=1E2-D2=1E-14_shuntDepth=1.0-0'
-base_folder = r'C:\Users\Erick\PycharmProjects\sentaurus_ddd\results\3D\Cs=1E+22D1=4E-16_h=1E-12_D2=1E-16_rho=4E-05_L=5.8_s=5E+01'
+base_folder = r'G:\Shared drives\FenningLab2\Projects\PVRD1\Simulations\Sentaurus PID\results\3D\recovery\N_Na=6.0E+23moles_D1=4E-16_h=1E-04_D2=1E-05_rho=4E-05_SD=1.0_s=5E+01'
 output_folder = r'analysis_plots'
 csv_index = r'file_index.csv'
-h5_root = r'G:\My Drive\Research\PVRD1\FENICS\SUPG_TRBDF2\simulations\results_two_layers\pnp\SWEEP_D,H\4um'
-na_file = 'two_layers_D1=4E-16cm2ps_D2=1E-16cm2ps_Cs1E+22cm3_T85_time96hr_h1.0e-12_m1.0e+00_pnp.h5'
+h5_root = r'G:\My Drive\Research\PVRD1\FENICS\SUPG_TRBDF2\simulations\results_two_layers\pnp\source_limited\source_limited_4um_Cs1E16_0.5MVcm\recovery'
+na_file = '48h_recovery_two_layers_SL_D1=4E-16cm2ps_D2=1E-05cm2ps_Cs1E+16cm3_T85_time12hr_h1.0e-04_m1.0e+00_v3.750e+00_pnp.h5'
 xfmt = ScalarFormatter(useMathText=True)
 xfmt.set_powerlimits((-3, 3))
 
@@ -176,18 +177,29 @@ if __name__ == '__main__':
     time_h = time_s / 3600
     df = pd.read_csv(filepath_or_buffer=os.path.join(base_folder, 'jv_plots', csv_index))
 
+
     cmap = mpl.cm.get_cmap('viridis_r')
     normalize = mpl.colors.Normalize(vmin=np.amin(time_h), vmax=np.amax(time_h))
     jv_colors = [cmap(normalize(t)) for t in time_h]
     scalar_maps = mpl.cm.ScalarMappable(cmap=cmap, norm=normalize)
 
+    shutil.copy(
+        src = os.path.join(h5_root, na_file), 
+        dst=os.path.join(base_folder,na_file)
+    )
     na_file = os.path.join(h5_root, na_file)
+    
     conductivity_file = os.path.join(base_folder, 'conductivity_profiles.h5')
+    if os.path.exists(conductivity_file):
+        print('Conductivity file:')
+        print(conductivity_file)
+        print('Exists!')
+        with h5py.File(conductivity_file, 'r') as hf:
+            sc = float(hf['conductivity'].attrs['segregation_coefficient'])
     with h5py.File(na_file, 'r') as hf:
         group_si = hf['L2']
         x = np.array(group_si['x'])
         x = x - x[0]
-
     # plt.ioff()
     fig = plt.figure()
     fig.set_size_inches(6.5, 3.5, forward=True)
@@ -201,31 +213,35 @@ if __name__ == '__main__':
     rsh_data = np.empty(len(efficiency_data), dtype=rsh_dtype)
 
     voc_max = np.amax(efficiency_data['voc (V)'])
-    with h5py.File(na_file, 'r') as hf, h5py.File(conductivity_file, 'a') as hf_conductivity:
-        group_si = hf['L2']
-        profiles = group_si['concentration']
-        conductivities = hf_conductivity['/conductivity']
-        sc = float(hf_conductivity['/conductivity'].attrs['segregation_coefficient'])
-        for i, row in df.iterrows():
-            ct_ds = 'ct_{0:d}'.format(row['index'])
-            dsc_str = 'sigma_{0:d}'.format(row['index'])
-            t = float(row['time (s)']) / 3600
-            c = np.array(profiles[ct_ds])*sc
+
+    for i, row in df.iterrows():
+        ct_ds = 'ct_{0:d}'.format(row['index'])
+        dsc_str = 'sigma_{0:d}'.format(row['index'])
+        with h5py.File(na_file, 'r') as hf:
+            group_si = hf['L2']
+            profiles = group_si['concentration']
+            c = np.array(profiles[ct_ds]) * sc
+
+        with h5py.File(conductivity_file, 'r') as hf_conductivity:
+            conductivities = hf_conductivity['conductivity']
             sigma = np.array(conductivities[dsc_str])
-            jv = analysis.read_jv(h5_filename=os.path.join(base_folder, 'jv_plots', row['filename']))
-            # jv = jv[jv['current (mA/cm2)'] >= 0]
-            ax3.plot(jv['voltage (V)'], jv['current (mA/cm2)'], '-', color=cmap(normalize(t)), zorder=0)
-            ax1.plot(x, c, color=jv_colors[i], zorder=0)
-            ax2.plot(x, sigma, color=jv_colors[i], zorder=0)
-            # Fit Rsh from the interval between 0 and 0.1 V (assume linear behavior)
-            idx_fit = jv['voltage (V)'] <= 0.15
-            res = fit_rsh(V=jv['voltage (V)'][idx_fit], J=jv['current (mA/cm2)'][idx_fit] / 1000)
-            popt = res.x
-            # print('popt = {0}'.format(popt))
-            pcov = find_pcov(res)
-            ci = cf.confint(n=len(jv['voltage (V)'][idx_fit]), pars=popt, pcov=pcov, confidence=0.95)
-            # ci = np.power(10, ci)
-            rsh_data[i] = (time_h[i], popt[0], ci[0, 0], ci[0, 1])
+
+        t = float(row['time (s)']) / 3600
+
+        jv = analysis.read_jv(h5_filename=os.path.join(base_folder, 'jv_plots', row['filename']))
+        # jv = jv[jv['current (mA/cm2)'] >= 0]
+        ax3.plot(jv['voltage (V)'], jv['current (mA/cm2)'], '-', color=cmap(normalize(t)), zorder=0)
+        ax1.plot(x, c, color=jv_colors[i], zorder=0)
+        ax2.plot(x, sigma, color=jv_colors[i], zorder=0)
+        # Fit Rsh from the interval between 0 and 0.1 V (assume linear behavior)
+        idx_fit = jv['voltage (V)'] <= 0.15
+        res = fit_rsh(V=jv['voltage (V)'][idx_fit], J=jv['current (mA/cm2)'][idx_fit] / 1000)
+        popt = res.x
+        # print('popt = {0}'.format(popt))
+        pcov = find_pcov(res)
+        ci = cf.confint(n=len(jv['voltage (V)'][idx_fit]), pars=popt, pcov=pcov, confidence=0.95)
+        # ci = np.power(10, ci)
+        rsh_data[i] = (time_h[i], popt[0], ci[0, 0], ci[0, 1])
 
     ax3.plot(efficiency_data['v_mpp (V)'], efficiency_data['j_mpp (mA/cm2)'],
              'o', color='r', ms=5, alpha=0.5)
@@ -321,7 +337,7 @@ if __name__ == '__main__':
     ax2.set_xlim(0, np.amax(time_h))
     ax3.set_xlim(0, np.amax(time_h))
 
-    ax1.set_ylim(50, 105)
+    ax1.set_ylim(10, 105)
     # ax3.set_ylim(50, 110)
 
     ax1.xaxis.set_label_position('top')
@@ -340,8 +356,8 @@ if __name__ == '__main__':
     ax1.xaxis.set_minor_locator(mticker.AutoMinorLocator(2))
 
     ax1.yaxis.set_major_formatter(xfmt)
-    # ax1.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
-    ax1.yaxis.set_major_locator(mticker.FixedLocator([50, 60, 70, 80, 90, 100]))
+    ax1.yaxis.set_major_locator(mticker.MaxNLocator(5, prune=None))
+    # ax1.yaxis.set_major_locator(mticker.FixedLocator(np.arange(ax1.get_ylim()[0], ax1.get_ylim()[1],10)))
     ax1.yaxis.set_minor_locator(mticker.AutoMinorLocator(2))
 
     ax2.xaxis.set_major_formatter(xfmt)
@@ -395,5 +411,6 @@ if __name__ == '__main__':
 
     plt.tight_layout()
     plt.show()
+
 
 

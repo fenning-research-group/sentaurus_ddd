@@ -79,7 +79,7 @@ def sigmafunc(CNa,coord,slope):
 	return 10**coord*CNa**slope
 
 ## Path to the experimental data extracted from Korol et al, fig 13, Na implantation in Si.
-path='//home//linux//ieng6//na299x//na299x//DB//Guillaume//cell_AlBSF//Al_BSF//Na_implantation_data'
+path=r'\\?\\G:\My Drive\Research\solar\sentaurus\Guillaume\Al_BSF\Na_implantation_data'
 
 mobilityfile_c1='Korov_curve1_mobility.csv' # mobility, curve 1 (cold implantation)
 carrierfile_c1='Korov_fig13_curve1_n.csv' # carrier density, curve 1 (cold implantation)
